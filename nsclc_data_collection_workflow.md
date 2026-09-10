@@ -20,10 +20,34 @@ ClinicalTrials.gov has a public REST API (v2, live since 2024): free, no key req
 ```
 https://clinicaltrials.gov/api/v2/studies
 ```
-Query with `query.cond=Non-Small Cell Lung Cancer`, `filter.overallStatus=COMPLETED` — this returns all completed trials registered under the NSCLC condition, i.e. your full candidate pool before any manual screening. Each result includes NCT ID, arms, phase, sponsor, and sometimes posted summary results — but rarely full KM curves or risk tables.
+Two stages. **Stage 1** — broad pull with `query.cond=Non-Small Cell Lung Cancer`, `filter.overallStatus=COMPLETED`, `filter.advanced=AREA[StudyType]INTERVENTIONAL` only, so nothing gets dropped by an over-narrow server-side query. **Stage 2** — tabulate the intervention types found across the raw pool, then keep only studies with at least one drug-like type (DRUG / BIOLOGICAL / COMBINATION_PRODUCT / GENETIC). This catches non-drug studies that `INTERVENTIONAL` alone lets through — e.g. NCT05348187, a PCR diagnostic-kit performance study whose only intervention type is DIAGNOSTIC_TEST — without dropping a real drug trial that also lists a companion diagnostic/device. Each result includes NCT ID, arms, phase, sponsor, and sometimes posted summary results.
+
+**StudyType breakdown** (NSCLC + COMPLETED, no other filter — 3,249 total):
+
+| Value | Count |
+|---|---|
+| INTERVENTIONAL | 2,700 |
+| OBSERVATIONAL | 549 |
+| EXPANDED_ACCESS | 0 |
+
+**InterventionType breakdown** (NSCLC + COMPLETED + INTERVENTIONAL — Stage 1's 2,700-study pool; a study can have >1 type):
+
+| Value | Count |
+|---|---|
+| DRUG | 2,212 |
+| BIOLOGICAL | 336 |
+| RADIATION | 266 |
+| OTHER | 260 |
+| PROCEDURE | 208 |
+| DEVICE | 47 |
+| BEHAVIORAL | 41 |
+| DIETARY_SUPPLEMENT | 23 |
+| DIAGNOSTIC_TEST | 22 |
+| GENETIC | 16 |
+| COMBINATION_PRODUCT | 12 |
 
 ### Step 2 — Link each NCT ID to its primary publication
-CT.gov's own "Results" module is usually too sparse (median PFS only, not curves). For example, NCT00638937 posts PFS as a tabular secondary outcome measure — Param Type: MEDIAN, Unit: months, Dispersion: 95% CI, reported simply as "1.8 (1.6 to 2.8)" per group — with no digitizable curve or risk table anywhere on the record. This is the typical shape of a CT.gov results entry even when "has results" is true. Use PubMed E-utilities to search:
+CT.gov's own "Results" module usually don't have K-M curves. For example, NCT00638937 posts only median of PFS and its 95% CI — with no digitizable curve or risk table anywhere on the record. Use PubMed E-utilities to search:
 ```
 NCT_ID[Secondary Source ID]
 ```
