@@ -18,8 +18,8 @@
 # Full-text verification of low-confidence candidates and any Google Scholar
 # fallback stay manual (Step 3) -- not scriptable at this precision.
 #
-# Input:  data/raw/ctgov_candidate_trials.csv (from 01_pull_ctgov_candidates.R)
-# Output: data/raw/nct_publication_links.csv
+# Input:  data/raw/step1_ctgov_candidate_trials.csv (from 01_pull_ctgov_candidates.R)
+# Output: data/raw/step2_nct_publication_links.csv
 
 required_pkgs <- c("httr", "jsonlite", "rentrez", "dplyr", "purrr", "tibble")
 missing_pkgs <- setdiff(required_pkgs, rownames(installed.packages()))
@@ -33,9 +33,9 @@ library(purrr)
 library(tibble)
 
 IN_DIR <- "data/raw"
-STUDIES_IN <- file.path(IN_DIR, "ctgov_candidate_trials.csv")
+STUDIES_IN <- file.path(IN_DIR, "step1_ctgov_candidate_trials.csv")
 OUT_DIR <- "data/raw"
-LINKS_OUT <- file.path(OUT_DIR, "nct_publication_links.csv")
+LINKS_OUT <- file.path(OUT_DIR, "step2_nct_publication_links.csv")
 CHECKPOINT_EVERY <- 100L
 CTGOV_BATCH_SIZE <- 250L
 
@@ -141,19 +141,34 @@ search_pubmed_si <- function(nct_id, retries = 1L) {
   result$ids
 }
 
-#' Fuzzy PubMed search: drug name(s) OR'd together, AND NSCLC, restricted to
-#' clinical trial publication types. Low precision/recall by nature -- one
-#' candidate only, for downstream human triage.
-search_pubmed_fuzzy <- function(drug_names, retries = 1L) {
+# Generic backbone/comparator agents excluded from the fuzzy query below --
+# OR'ing these in makes the query match almost any NSCLC trial paper (found
+# via spot-check: 248/1041 initial fuzzy "matches" collapsed onto the same
+# wrong PMID because "Placebo"/"Carboplatin"/"Cisplatin" etc. are so common
+# that the top hit was effectively just "most recent NSCLC trial paper").
+GENERIC_DRUG_TERMS <- c(
+  "placebo", "carboplatin", "cisplatin", "paclitaxel", "docetaxel",
+  "gemcitabine", "pemetrexed", "vinorelbine", "etoposide", "nab-paclitaxel",
+  "albumin-bound paclitaxel", "oxaliplatin", "irinotecan"
+)
+
+#' Fuzzy PubMed search: distinctive (non-backbone) drug name(s) OR'd together,
+#' AND NSCLC, restricted to clinical trial publication types. Rejects the hit
+#' if the query is still too broad to trust a single top result (large
+#' result count means the drug terms weren't specific enough to this trial).
+search_pubmed_fuzzy <- function(drug_names, retries = 1L, count_threshold = 15L) {
   if (is.na(drug_names) || !nzchar(drug_names)) return(NULL)
   drugs <- strsplit(drug_names, "; ")[[1]]
+  drugs <- drugs[!tolower(drugs) %in% GENERIC_DRUG_TERMS]
+  if (length(drugs) == 0) return(NULL)
+
   drug_term <- paste(sprintf("%s[tiab]", drugs), collapse = " OR ")
   term <- sprintf(
     '(%s) AND "non-small cell lung cancer"[tiab] AND (clinical trial[pt] OR clinical trial[tiab])',
     drug_term
   )
   result <- tryCatch(
-    entrez_search(db = "pubmed", term = term, retmax = 3),
+    entrez_search(db = "pubmed", term = term, retmax = 3, sort = "relevance"),
     error = function(e) e
   )
   if (inherits(result, "error")) {
@@ -161,11 +176,12 @@ search_pubmed_fuzzy <- function(drug_names, retries = 1L) {
     return(NULL)
   }
   if (length(result$ids) == 0) return(NULL)
+  if (result$count > count_threshold) return(NULL)
 
   top_pmid <- result$ids[1]
   summ <- tryCatch(entrez_summary(db = "pubmed", id = top_pmid), error = function(e) NULL)
   title <- if (!is.null(summ)) summ$title %||% NA_character_ else NA_character_
-  list(pmid = top_pmid, title = title)
+  list(pmid = top_pmid, title = title, n_results = result$count)
 }
 
 ## ---- Stage 4/5: OpenAlex full-text NCT search and topic search --------
@@ -236,7 +252,7 @@ link_one_trial <- function(nct_id, ctgov_ref_pmids, ctgov_ref_citation, drug_nam
     return(tibble(
       nct_id = nct_id, match_source = "pubmed_fuzzy", confidence = "low",
       pmid = fuzzy$pmid, doi = NA_character_, title_or_citation = fuzzy$title,
-      match_score = NA_real_
+      match_score = fuzzy$n_results
     ))
   }
 
