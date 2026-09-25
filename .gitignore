@@ -50,6 +50,7 @@ rsconnect/
 
 # Data files
 *.csv
+*.xlsx
 
 # Scratch/exploratory files -- never uploaded to git
 /tmp/

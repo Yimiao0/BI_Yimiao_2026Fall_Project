@@ -1,15 +1,15 @@
-# Step 2 (nsclc_data_collection_workflow.md): Link each NCT ID from Step 1 to
-# its primary publication. Priority cascade, stopping at first success:
+# Step 1 Stage 3 (nsclc_data_collection_workflow.md): Link each candidate NCT ID
+# to its primary publication via CT.gov's own linked references
+# (referencesModule), batched. Reference priority: RESULT (sponsor-marked
+# results paper), then DERIVED (auto-linked by NLM from PubMed); BACKGROUND
+# references are never used. The DOI comes from PubMed via the reference's
+# PMID, or else from the reference's citation text.
 #
-#   1. CT.gov's own linked references (referencesModule) -- batched, free
-#      (curated or auto-linked by NLM).
-#   2. PubMed exact match: NCT_ID[si].
-#
-# If neither stage finds a linked publication, the trial is marked as having
-# no publication found. 
+# If no RESULT/DERIVED reference yields a DOI (via PubMed or its citation), the
+# trial is marked as having no publication found.
 #
 # Input:  data/raw/step1_ctgov_candidate_trials.csv (from 01_pull_ctgov_candidates.R)
-# Output: data/raw/step2_nct_publication_links.csv
+# Output: data/raw/step1_nct_publication_links.csv
 
 required_pkgs <- c("httr", "jsonlite", "rentrez", "dplyr", "purrr", "tibble")
 missing_pkgs <- setdiff(required_pkgs, rownames(installed.packages()))
@@ -25,7 +25,7 @@ library(tibble)
 IN_DIR <- "data/raw"
 STUDIES_IN <- file.path(IN_DIR, "step1_ctgov_candidate_trials.csv")
 OUT_DIR <- "data/raw"
-LINKS_OUT <- file.path(OUT_DIR, "step2_nct_publication_links.csv")
+LINKS_OUT <- file.path(OUT_DIR, "step1_nct_publication_links.csv")
 CHECKPOINT_EVERY <- 100L
 CTGOV_BATCH_SIZE <- 250L
 
@@ -41,7 +41,7 @@ if (!is.na(api_key) && nzchar(api_key)) {
   PUBMED_DELAY <- 0.35
 }
 
-## ---- Stage 1: CT.gov linked references (batched) ----------------------
+## ---- CT.gov linked references (batched) --------------------------------
 
 #' Batch-fetch referencesModule for a vector of NCT IDs, CTGOV_BATCH_SIZE at a
 #' time (avoids the GET URL-length limit -- 1000 IDs in one request 414s, 500
@@ -69,7 +69,7 @@ fetch_ctgov_context <- function(nct_ids, batch_size = CTGOV_BATCH_SIZE) {
       stop_for_status(resp)
       fromJSON(content(resp, "text", encoding = "UTF-8"), simplifyVector = FALSE)$studies
     }, error = function(e) {
-      warning(sprintf("CT.gov context batch %d/%d failed (%s) -- skipping these %d IDs, they'll fall through to the PubMed exact-match stage",
+      warning(sprintf("CT.gov context batch %d/%d failed (%s) -- skipping these %d IDs, they'll be marked as no publication found",
                        i, length(batches), conditionMessage(e), length(ids)))
       list()
     })
@@ -81,31 +81,30 @@ fetch_ctgov_context <- function(nct_ids, batch_size = CTGOV_BATCH_SIZE) {
   results
 }
 
-#' Pull the fields Stage 1 needs out of one raw CT.gov study record.
+#' Pull the reference fields out of one raw CT.gov study record. Keeps only
+#' RESULT and DERIVED references (BACKGROUND references are context, not
+#' reports of this trial), RESULT first, then DERIVED, each in CT.gov order.
 extract_context_row <- function(study) {
   ps <- study$protocolSection
   nct_id <- ps$identificationModule$nctId %||% NA_character_
 
-  refs <- ps$referencesModule$references
-  ref_pmids <- if (length(refs) > 0) {
-    pmids <- map_chr(refs, function(r) r$pmid %||% NA_character_)
-    pmids[!is.na(pmids)]
-  } else character(0)
-  ref_citation <- if (length(refs) > 0) refs[[1]]$citation %||% NA_character_ else NA_character_
+  refs <- ps$referencesModule$references %||% list()
+  ref_types <- map_chr(refs, function(r) r$type %||% NA_character_)
+  usable <- c(refs[ref_types %in% "RESULT"], refs[ref_types %in% "DERIVED"])
+
   # Full referencesModule.references list (type/pmid/citation per entry), as
-  # returned by CT.gov, so the original reference link/data isn't lost even
-  # though only the first pmid/citation are used downstream.
+  # returned by CT.gov, so the original reference data isn't lost even
+  # though only one reference is used downstream.
   ref_raw <- if (length(refs) > 0) as.character(toJSON(refs, auto_unbox = TRUE)) else NA_character_
 
   tibble(
     nct_id = nct_id,
-    ctgov_ref_pmids = if (length(ref_pmids) > 0) paste(ref_pmids, collapse = ";") else NA_character_,
-    ctgov_ref_citation = ref_citation,
+    usable_refs = list(usable),
     ctgov_ref_raw = ref_raw
   )
 }
 
-## ---- Stage 2: PubMed exact match ([si]) --------------------------------
+## ---- DOI lookup ---------------------------------------------------------
 
 #' Pull the DOI (if any) out of an entrez_summary() result -- PubMed's
 #' articleids table carries it as the row with idtype == "doi".
@@ -125,9 +124,8 @@ extract_doi_from_citation <- function(citation) {
   sub("[.,;:)]+$", "", m)
 }
 
-#' Look up a single PMID's DOI via entrez_summary (used for pmids we already
-#' resolved via a CT.gov reference or the exact [si] match, neither of which
-#' otherwise surfaces a DOI).
+#' Look up a single PMID's DOI via entrez_summary (the CT.gov reference
+#' only surfaces the PMID, not a DOI).
 fetch_doi_for_pmid <- function(pmid, retries = 1L) {
   summ <- tryCatch(entrez_summary(db = "pubmed", id = pmid), error = function(e) e)
   if (inherits(summ, "error")) {
@@ -137,52 +135,39 @@ fetch_doi_for_pmid <- function(pmid, retries = 1L) {
   extract_doi(summ)
 }
 
-search_pubmed_si <- function(nct_id, retries = 1L) {
-  result <- tryCatch(
-    entrez_search(db = "pubmed", term = sprintf("%s[si]", nct_id), retmax = 5),
-    error = function(e) e
-  )
-  if (inherits(result, "error")) {
-    if (retries > 0) { Sys.sleep(1); return(search_pubmed_si(nct_id, retries - 1L)) }
-    return(character(0))
-  }
-  result$ids
-}
+## ---- Driver: link one NCT ID --------------------------------------------
 
-## ---- Driver: run the cascade for one NCT ID ----------------------------
+#' Walk the RESULT-then-DERIVED references and link the first one that yields
+#' a DOI. DOI: from PubMed if the reference has a PMID, falling back to a DOI
+#' in that same reference's citation text. A reference with no DOI is skipped.
+link_one_trial <- function(nct_id, usable_refs, ctgov_ref_raw) {
+  all_pmids <- unique(na.omit(map_chr(usable_refs, function(r) r$pmid %||% NA_character_)))
+  pmids_all <- if (length(all_pmids) > 0) paste(all_pmids, collapse = ";") else NA_character_
 
-link_one_trial <- function(nct_id, ctgov_ref_pmids, ctgov_ref_citation, ctgov_ref_raw) {
-  # 1. CT.gov linked reference -- look up its DOI via PubMed (using the
-  # first PMID if the reference lists more than one).
-  if (!is.na(ctgov_ref_pmids)) {
-    first_pmid <- strsplit(ctgov_ref_pmids, ";")[[1]][1]
-    ref_doi <- fetch_doi_for_pmid(first_pmid)
-    Sys.sleep(PUBMED_DELAY)
-    if (is.na(ref_doi)) ref_doi <- extract_doi_from_citation(ctgov_ref_citation)
-    return(tibble(
-      nct_id = nct_id, match_source = "ctgov_reference", confidence = "found",
-      pmid = ctgov_ref_pmids, doi = ref_doi, title_or_citation = ctgov_ref_citation,
-      ctgov_ref_raw = ctgov_ref_raw
-    ))
-  }
+  for (r in usable_refs) {
+    ref_pmid <- r$pmid %||% NA_character_
+    ref_citation <- r$citation %||% NA_character_
 
-  # 2. PubMed exact [si]
-  si_ids <- search_pubmed_si(nct_id)
-  Sys.sleep(PUBMED_DELAY)
-  if (length(si_ids) > 0) {
-    si_doi <- fetch_doi_for_pmid(si_ids[1])
-    Sys.sleep(PUBMED_DELAY)
-    return(tibble(
-      nct_id = nct_id, match_source = "pubmed_si", confidence = "found",
-      pmid = paste(si_ids, collapse = ";"), doi = si_doi, title_or_citation = NA_character_,
-      ctgov_ref_raw = ctgov_ref_raw
-    ))
+    ref_doi <- NA_character_
+    if (!is.na(ref_pmid)) {
+      ref_doi <- fetch_doi_for_pmid(ref_pmid)
+      Sys.sleep(PUBMED_DELAY)
+    }
+    if (is.na(ref_doi)) ref_doi <- extract_doi_from_citation(ref_citation)
+
+    if (!is.na(ref_doi)) {
+      return(tibble(
+        nct_id = nct_id, match_source = "ctgov_reference", confidence = "found",
+        ref_type = r$type, pmid = ref_pmid, doi = ref_doi, title_or_citation = ref_citation,
+        pmids_all = pmids_all, ctgov_ref_raw = ctgov_ref_raw
+      ))
+    }
   }
 
   tibble(
     nct_id = nct_id, match_source = "none", confidence = "not_found",
-    pmid = NA_character_, doi = NA_character_, title_or_citation = NA_character_,
-    ctgov_ref_raw = ctgov_ref_raw
+    ref_type = NA_character_, pmid = NA_character_, doi = NA_character_, title_or_citation = NA_character_,
+    pmids_all = pmids_all, ctgov_ref_raw = ctgov_ref_raw
   )
 }
 
@@ -193,20 +178,19 @@ studies_df <- read.csv(STUDIES_IN, stringsAsFactors = FALSE)
 nct_ids <- unique(studies_df$nct_id[!is.na(studies_df$nct_id)])
 n_total <- length(nct_ids)
 
-message(sprintf("Stage 1: batch-fetching CT.gov references for %d NCT IDs...", n_total))
+message(sprintf("Batch-fetching CT.gov references for %d NCT IDs...", n_total))
 ctgov_raw <- fetch_ctgov_context(nct_ids)
 ctgov_context <- map_dfr(ctgov_raw, extract_context_row)
 
-message(sprintf("Stage 2: running PubMed exact-match search for NCT IDs with no CT.gov reference (%d total)...", n_total))
+message(sprintf("Linking %d NCT IDs and looking up DOIs...", n_total))
 
 links_list <- vector("list", n_total)
 for (i in seq_len(n_total)) {
   ctx <- ctgov_context[ctgov_context$nct_id == nct_ids[i], ]
   links_list[[i]] <- link_one_trial(
     nct_id = nct_ids[i],
-    ctgov_ref_pmids = ctx$ctgov_ref_pmids[1],
-    ctgov_ref_citation = ctx$ctgov_ref_citation[1],
-    ctgov_ref_raw = ctx$ctgov_ref_raw[1]
+    usable_refs = if (nrow(ctx) > 0) ctx$usable_refs[[1]] else list(),
+    ctgov_ref_raw = if (nrow(ctx) > 0) ctx$ctgov_ref_raw[1] else NA_character_
   )
 
   if (i %% CHECKPOINT_EVERY == 0 || i == n_total) {
@@ -217,12 +201,25 @@ for (i in seq_len(n_total)) {
 
 links_df <- bind_rows(links_list)
 
+# Several trials can link to the same paper (pooled reports, reviews,
+# secondary analyses). Keep only the earliest-registered trial (lowest NCT ID)
+# per DOI (case-insensitive); rows without a DOI are never treated as
+# duplicates. Row order is otherwise unchanged.
+doi_key <- tolower(links_df$doi)
+by_nct <- order(links_df$nct_id)
+is_dup_doi <- logical(nrow(links_df))
+is_dup_doi[by_nct] <- !is.na(doi_key[by_nct]) & duplicated(doi_key[by_nct])
+message(sprintf("\nDropping %d records whose DOI duplicates an earlier record", sum(is_dup_doi)))
+links_df <- links_df[!is_dup_doi, ]
+write.csv(links_df, LINKS_OUT, row.names = FALSE)
+n_total <- nrow(links_df)
+
 summary_tbl <- links_df %>% count(match_source, confidence, sort = TRUE)
 n_found <- sum(links_df$confidence == "found")
 n_not_found <- sum(links_df$confidence == "not_found")
 
 message("\n--- Publication linkage summary ---")
 print(summary_tbl, n = Inf)
-message(sprintf("\nPublication found (CT.gov ref / PubMed exact): %d (%.1f%%)", n_found, 100 * n_found / n_total))
-message(sprintf("No publication found:                           %d (%.1f%%)", n_not_found, 100 * n_not_found / n_total))
+message(sprintf("\nPublication found (CT.gov reference with DOI): %d (%.1f%%)", n_found, 100 * n_found / n_total))
+message(sprintf("No publication found:                         %d (%.1f%%)", n_not_found, 100 * n_not_found / n_total))
 message(sprintf("\nWrote linkage table to %s", LINKS_OUT))

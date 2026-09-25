@@ -6,6 +6,7 @@
 # raw pool -> audit tabulations.
 # Stage 2.2: keep only studies with at least one drug-like type -> filtered
 # candidate CSV.
+# Stage 3 (publication linkage) is in 01b_link_nct_to_pubmed.R.
 
 required_pkgs <- c("httr", "jsonlite", "dplyr", "purrr", "tibble")
 missing_pkgs <- setdiff(required_pkgs, rownames(installed.packages()))
@@ -203,7 +204,7 @@ print(phase_tabulation, n = Inf)
 write.csv(phase_tabulation, PHASE_TABULATION_OUT, row.names = FALSE)
 message(sprintf("Wrote phase tabulation to %s", PHASE_TABULATION_OUT))
 
-## Stage 2.2: keep only studies with a drug-like intervention type -------
+## Stage 2.2: keep only studies with a (DRUG, BIOLOGICAL, or COMBINATION) intervention type -------
 
 is_drug_like <- function(intervention_types) {
   if (is.na(intervention_types)) return(FALSE)
