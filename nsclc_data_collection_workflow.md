@@ -167,6 +167,7 @@ For each trial:
 2. Check that it is the trial's primary results paper for NSCLC. If it is a secondary
    analysis, another cancer type, or a special population (e.g. brain or
    leptomeningeal metastases only), still fill it but say so at the start of notes.
+   Start notes with "NOT NSCLC:" when the arm's patients are not NSCLC.
 3. Fill one row per stratum-arm in the claude_collected sheet of
    data/raw/step3_stratum_arm_variables.xlsx, following the codebook sheet and its
    data-entry rules. Continue arm_id from the last existing row. Don't change
@@ -188,8 +189,9 @@ in this group that need a closer look. Then continue with the next group without
 waiting. At the end, give a short overall summary in the same format.
 ```
 
-Output: `data/raw/step3_stratum_arm_variables.xlsx`, with five sheets:
-- `claude_collected`: all stratum-arms Claude Code collects in Step 3
+Output: `data/raw/step3_stratum_arm_variables.xlsx`, with six sheets:
+- `claude_collected`: the stratum-arms Claude Code collects in Step 3 that are in the analysis population
+- `irrelevant_arms`: collected stratum-arms moved out of `claude_collected` by the filtering stage below, with an `exclusion_reason` column
 - `failed_open_free_papers`: open-access or free-access papers Claude Code couldn't fill, with NCT ID, DOI and the reason
 - `claude_pilot`: a pilot test on a small number of publications (13 stratum-arms from 8 papers), done before the full collection
 - `manual_pilot_check`: the pilot stratum-arms filled by hand, to check Claude Code's accuracy against `claude_pilot`
@@ -212,6 +214,20 @@ Data-entry rules:
 | Outcomes | `ORR`, `ORR_ci_low`, `ORR_ci_high`, `mPFS_months`, `mPFS_ci_low`, `mPFS_ci_high` | ORR as a proportion (0–1); median PFS converted to months |
 | KM figure | `location_PFS_KM` | Figure holding the PFS KM curve |
 | Notes | `notes` | Source tables/figures and anything unusual |
+
+#### Final stage — Filter out arms outside the analysis population
+After collection, `scripts/data_collection_scripts/03_filter_irrelevant_arms.R` moves two kinds of stratum-arm from `claude_collected` to the `irrelevant_arms` sheet. That sheet has the same columns plus `exclusion_reason`:
+
+- **Not NSCLC:** `notes` contain "NOT NSCLC". Examples are other cancer cohorts of basket trials, small-cell lung cancer, and brain metastases from other primaries.
+- **Surgical:** surgery is part of the planned treatment. This covers neoadjuvant, preoperative or perioperative therapy, and surgery alone. Their ORR is a short pre-surgery response and their PFS is often disease-free survival after resection.
+- **Definitive chemoradiation:** curative-intent chemoradiation for unresectable (locally advanced) stage III disease. Their ORR mostly reflects radiation of the primary tumour, and their PFS is far longer (often not reached).
+- **Intracranial-only ORR:** brain-metastasis cohorts whose ORR counts only brain lesions, so it is not comparable with systemic RECIST ORR. Brain-metastasis cohorts that report systemic RECIST ORR stay.
+
+Surgical and chemoradiation arms are curative-intent treatment of early or locally advanced disease, so their ORR and PFS are not comparable with the analysis population: systemic therapy for advanced or metastatic NSCLC (stage IIIB–IV or recurrent). They are listed by `arm_id` in the script after manual review, because a keyword search also matches unrelated text (e.g. "unresectable", "prior neoadjuvant allowed"). Radiotherapy given alongside systemic therapy for metastatic disease does not count and those arms stay.
+
+Other sheets are not changed, and re-running the script doesn't duplicate rows. Close the workbook in Excel before running it.
+
+**Result: 42 stratum-arms moved to `irrelevant_arms` (21 not NSCLC from 12 trials; 11 surgical from 7 trials; 7 definitive chemoradiation from 6 trials; 3 intracranial-only ORR from 3 trials); 207 stratum-arms remain in `claude_collected`.**
 
 
 

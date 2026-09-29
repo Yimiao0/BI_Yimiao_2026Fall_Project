@@ -1,0 +1,279 @@
+---
+title: "Arm-level models for ORR and median PFS"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    toc: true
+    number_sections: false
+geometry: margin=0.9in
+fontsize: 10pt
+header-includes:
+  - \usepackage{booktabs}
+  - \usepackage{float}
+---
+
+<!--
+Report of the models in statistical_methods.md, fitted by data_modeling.R.
+Render from the project root:
+  Rscript -e 'rmarkdown::render("scripts/stat_method/model_report.Rmd",
+                                output_dir = "results/modeling", knit_root_dir = getwd())'
+If TinyTeX reports "multirow.sty not found" (kableExtra needs it), run
+tinytex::tlmgr_install("multirow"), or render with
+output_format = rmarkdown::latex_document(latex_engine = "xelatex", toc = TRUE)
+and compile the .tex twice with /Library/TeX/texbin/xelatex (MacTeX has it).
+-->
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE,
+                      fig.align = "center", fig.pos = "H", out.width = "95%")
+```
+
+```{r fit}
+library(kableExtra)
+library(ggplot2)
+source("scripts/stat_method/data_modeling.R")
+
+arm_df <- load_arm_data()
+m1_1 <- fit_logistic_orr(arm_df, family = "binomial")
+m1_2 <- fit_logistic_orr(arm_df, family = "quasibinomial")
+m1_3 <- fit_betabinomial_orr(arm_df)
+m2_obs <- fit_logmpfs(arm_df, p_source = "observed")
+m2_est <- fit_logmpfs(arm_df, p_source = "estimated", n_boot = 1000)
+
+t1_1 <- tidy_logistic(m1_1)
+t1_2 <- tidy_logistic(m1_2)
+t1_3 <- tidy_logistic(est = m1_3$coef, vc = m1_3$vcov)
+
+TERM_LABELS <- c(
+  "(Intercept)" = "Intercept", p = "Response probability $p_i$",
+  median_age = "Median age (years)", female_prop = "Female proportion",
+  tobacco_ever_prop = "Ever-smoker proportion", ECOG_0_prop = "ECOG 0 proportion",
+  squamous_prop = "Squamous proportion", stage_IV_prop = "Stage IV proportion",
+  first_line = "First-line", moa_chemo = "MOA: chemotherapy",
+  moa_immune_checkpoint = "MOA: immune checkpoint inhibitor",
+  moa_immune_other = "MOA: other immune", moa_antiangio = "MOA: anti-angiogenic",
+  moa_targeted = "MOA: targeted", moa_other = "MOA: other agent",
+  biomarker_matched = "Matched biomarker"
+)
+lab <- function(term) ifelse(term %in% names(TERM_LABELS), TERM_LABELS[term], term)
+
+fmt_p <- function(p) ifelse(p < 0.001, formatC(p, format = "e", digits = 1), sprintf("%.3f", p))
+fmt_ci <- function(est, lo, hi) sprintf("%.2f (%.2f, %.2f)", est, lo, hi)
+
+# Ratio table: exp(estimate) with 95% CI and p-value
+ratio_table <- function(tbl, ratio, lo, hi, ratio_name) {
+  out <- data.frame(
+    Term = lab(tbl$term),
+    Estimate = sprintf("%.3f", tbl$estimate),
+    SE = sprintf("%.3f", tbl$std_error),
+    Ratio = fmt_ci(tbl[[ratio]], tbl[[lo]], tbl[[hi]]),
+    p = fmt_p(tbl$p_value)
+  )
+  names(out)[4] <- ratio_name
+  out
+}
+
+kbl_tex <- function(df, caption, align = c("l", rep("r", ncol(df) - 1)), ...) {
+  kbl(df, format = "latex", booktabs = TRUE, escape = FALSE, caption = caption, row.names = FALSE,
+      align = align, linesep = "", ...) %>%
+    kable_styling(latex_options = c("HOLD_position"), font_size = 8.5)
+}
+```
+
+# Data
+
+Each row is one trial arm (or one non-overlapping stratum of an arm) from the
+`claude_collected` sheet of `data/raw/step3_stratum_arm_variables.xlsx`:
+`r nrow(arm_df)` arms from `r length(unique(arm_df$nct_id))` trials. Arms missing any
+covariate or the outcome are excluded (complete cases), so each model uses fewer arms
+(see the fit summaries).
+
+```{r covariates}
+cov_tbl <- data.frame(
+  Symbol = c("$\\text{age}_i$", "$F_i$", "$T_i$", "$E_i$", "$S_i$", "$G_i$", "$L_i$", "$M_{i,k}$", "$B_i$"),
+  Covariate = c("Median age (years)", "Female proportion", "Ever-smoker proportion",
+                "ECOG 0 proportion", "Squamous proportion", "Stage IV proportion",
+                "First-line (0/1)", "MOA components (0/1 each)", "Matched biomarker (0/1)"),
+  Definition = c("median age", "female / $n_i$",
+                 "ever / (ever + never), known smoking status only",
+                 "ECOG 0 / $n_i$", "squamous / $n_i$",
+                 "stage IV / stage I--IV, known stage only",
+                 "1 = first-line incl.\\ maintenance; 0 = pretreated",
+                 "chemo, ICI, other immune, anti-angio, targeted, other; all 0 = no active drug",
+                 "1 = selected on a validated predictive biomarker for a drug in the regimen"),
+  Missing = c(vapply(c("median_age", "female_prop", "tobacco_ever_prop", "ECOG_0_prop",
+                       "squamous_prop", "stage_IV_prop", "first_line"),
+                     function(v) sum(is.na(arm_df[[v]])), integer(1), USE.NAMES = FALSE),
+              sum(!complete.cases(arm_df[, MOA_COLS])), sum(is.na(arm_df$biomarker_matched)))
+)
+kbl_tex(cov_tbl, "Covariates $\\mathbf{x}_i$ (number of arms missing each)",
+        align = c("l", "l", "l", "r")) %>%
+  column_spec(3, width = "7cm")
+```
+
+$\mathbf{x}_i = (\text{age}_i, F_i, T_i, E_i, S_i, G_i, L_i, M_{i,1}, \dots, M_{i,6}, B_i)^\top$;
+the intercept is kept separate. $n_i$ is the arm sample size.
+
+# Model 1: logistic models for ORR
+
+Let $Y_i = \mathrm{round}(\text{ORR}_i \cdot n_i)$ be the number of responders in arm $i$.
+All three versions share the mean model
+
+$$
+\mathrm{logit}(p_i) = \alpha_0 + \boldsymbol\alpha^\top \mathbf{x}_i ,
+$$
+
+where $p_i$ is the response probability of arm $i$ and $\exp(\alpha_k)$ is the odds ratio
+of response per unit increase in covariate $k$. They differ only in the variance of $Y_i$.
+
+**Model 1.1, binomial.** $Y_i \sim \text{Binomial}(n_i, p_i)$, with log-likelihood
+
+$$
+\ell(\alpha_0, \boldsymbol\alpha) = \sum_{i=1}^{N} \Big[ Y_i \lambda_i - n_i \log\big(1 + e^{\lambda_i}\big) \Big] + \text{const},
+\qquad \lambda_i = \alpha_0 + \boldsymbol\alpha^\top \mathbf{x}_i .
+$$
+
+**Model 1.2, quasibinomial.** Same mean, $\mathrm{Var}(Y_i) = \phi\, n_i p_i (1 - p_i)$.
+The point estimates equal Model 1.1; every standard error is multiplied by
+$\sqrt{\hat\phi}$, where $\hat\phi$ is the Pearson $\chi^2$ divided by the residual degrees of freedom.
+
+**Model 1.3, beta-binomial.** $Y_i \mid q_i \sim \text{Binomial}(n_i, q_i)$ with
+$q_i \sim \text{Beta}(p_i s, (1 - p_i) s)$, so $\mathrm{Var}(Y_i) = n_i p_i (1 - p_i)[1 + (n_i - 1)\rho]$
+with $\rho = 1/(1 + s)$. Likelihood
+
+$$
+L(\alpha_0, \boldsymbol\alpha, s) = \prod_{i=1}^{N} \binom{n_i}{Y_i}
+\frac{B\big(Y_i + p_i s,\ n_i - Y_i + (1 - p_i) s\big)}{B\big(p_i s,\ (1 - p_i) s\big)},
+$$
+
+maximized numerically; standard errors from the inverse Hessian.
+
+## Fit summary
+
+```{r m1-fit}
+q <- sum(!is.na(coef(m1_1)))
+ll_1 <- as.numeric(logLik(m1_1))
+fit_tbl <- data.frame(
+  Model = c("1.1 Binomial", "1.2 Quasibinomial", "1.3 Beta-binomial"),
+  Arms = c(nobs(m1_1), nobs(m1_2), m1_3$nobs),
+  Parameters = c(q, q + 1, q + 1),
+  Dispersion = c(sprintf("Pearson $\\chi^2$/df = %.2f", dispersion_ratio(m1_1)),
+                 sprintf("$\\hat\\phi$ = %.2f", summary(m1_2)$dispersion),
+                 sprintf("$\\hat\\rho$ = %.3f", m1_3$rho)),
+  logLik = c(sprintf("%.1f", ll_1), "--", sprintf("%.1f", m1_3$logLik)),
+  AIC = c(sprintf("%.1f", -2 * ll_1 + 2 * q), "--",
+          sprintf("%.1f", -2 * m1_3$logLik + 2 * (q + 1)))
+)
+kbl_tex(fit_tbl, "Model 1 fit summary")
+```
+
+The binomial variance clearly fails: the Pearson ratio is far above 1, so Model 1.1
+standard errors are too small by about $\sqrt{\hat\phi}$. The beta-binomial improves the
+log-likelihood by `r sprintf("%.0f", m1_3$logLik - ll_1)` units with one extra parameter.
+
+## Coefficients
+
+```{r m1-coef}
+kbl_tex(ratio_table(t1_1, "odds_ratio", "or_ci_low", "or_ci_high", "OR (95\\% CI)"),
+        "Model 1.1, binomial")
+kbl_tex(ratio_table(t1_2, "odds_ratio", "or_ci_low", "or_ci_high", "OR (95\\% CI)"),
+        "Model 1.2, quasibinomial")
+kbl_tex(ratio_table(t1_3, "odds_ratio", "or_ci_low", "or_ci_high", "OR (95\\% CI)"),
+        "Model 1.3, beta-binomial")
+```
+
+## Comparison
+
+\newpage
+
+```{r m1-compare, fig.width = 8, fig.height = 5.4, out.width = "90%", fig.cap = "Odds ratios with 95\\% CIs by model (log scale), intercept omitted."}
+cmp <- rbind(
+  cbind(t1_1, model = "1.1 Binomial"),
+  cbind(t1_2, model = "1.2 Quasibinomial"),
+  cbind(t1_3, model = "1.3 Beta-binomial")
+)
+cmp <- cmp[cmp$term != "(Intercept)", ]
+cmp$term <- factor(gsub("\\$", "", lab(cmp$term)), levels = rev(gsub("\\$", "", lab(t1_1$term[-1]))))
+cmp$model <- factor(cmp$model, levels = c("1.1 Binomial", "1.2 Quasibinomial", "1.3 Beta-binomial"))
+
+ggplot(cmp, aes(odds_ratio, term, colour = model)) +
+  geom_vline(xintercept = 1, linetype = "dashed", colour = "grey50") +
+  geom_pointrange(aes(xmin = or_ci_low, xmax = or_ci_high),
+                  position = position_dodge(width = 0.6), size = 0.25) +
+  scale_x_log10() +
+  scale_colour_manual(values = c("#0072B2", "#E69F00", "#009E73"), name = NULL) +
+  labs(x = "Odds ratio (log scale)", y = NULL) +
+  theme_bw(base_size = 10) +
+  theme(legend.position = "top")
+```
+
+```{r m1-calib, fig.width = 8, fig.height = 3.6, fig.cap = "Observed ORR against fitted $\\hat p_i$; point size is arm size. Points should scatter around the diagonal."}
+cal <- rbind(
+  data.frame(model = "1.1 / 1.2 (same fit)", fitted = fitted(m1_1),
+             observed = m1_1$data$responders / m1_1$data$arm_sample_size,
+             n = m1_1$data$arm_sample_size),
+  data.frame(model = "1.3 Beta-binomial",
+             fitted = plogis(drop(model.matrix(m1_1)[, names(m1_3$coef)] %*% m1_3$coef)),
+             observed = m1_1$data$responders / m1_1$data$arm_sample_size,
+             n = m1_1$data$arm_sample_size)
+)
+ggplot(cal, aes(fitted, observed, size = n)) +
+  geom_abline(linetype = "dashed", colour = "grey50") +
+  geom_point(alpha = 0.5) +
+  scale_size_area(max_size = 5, name = "Arm size") +
+  coord_equal(xlim = c(0, 1), ylim = c(0, 1)) +
+  facet_wrap(~ model) +
+  labs(x = "Fitted response probability", y = "Observed ORR") +
+  theme_bw(base_size = 10)
+```
+
+# Model 2: log-linear model for median PFS
+
+Let $m_i$ be the reported median PFS (months) of arm $i$:
+
+$$
+\log m_i = \theta_0 + \theta_p p_i + \boldsymbol\theta^\top \mathbf{x}_i + \varepsilon_i,
+\qquad \varepsilon_i \sim N\big(0, \sigma^2 / n_i\big),
+$$
+
+fitted by weighted least squares with weights $n_i$. $\exp(\theta_k)$ is the ratio of
+median PFS per unit increase in covariate $k$. The response probability $p_i$ is not
+observed and is either
+
+* **observed:** the observed $\text{ORR}_i$ (measurement error biases $\theta_p$ toward 0), or
+* **estimated:** $\hat p_i$ from Model 1.1 (two-stage); standard errors and CIs from
+  `r nrow(m2_est$boot)` bootstrap resamples of arms.
+
+## Observed ORR
+
+```{r m2-obs}
+kbl_tex(ratio_table(m2_obs$coef, "mpfs_ratio", "ratio_ci_low", "ratio_ci_high",
+                    "Median ratio (95\\% CI)"),
+        sprintf("Model 2 with observed ORR (%d arms, residual SE %.2f)",
+                nobs(m2_obs$fit), summary(m2_obs$fit)$sigma))
+```
+
+## Estimated $\hat p_i$ (two-stage)
+
+```{r m2-est}
+kbl_tex(ratio_table(m2_est$coef, "mpfs_ratio", "ratio_boot_ci_low", "ratio_boot_ci_high",
+                    "Median ratio (bootstrap 95\\% CI)"),
+        sprintf("Model 2 with $\\hat p_i$ from Model 1.1 (%d arms)", nobs(m2_est$fit)))
+```
+
+$\theta_p$ is weakly identified here: $\hat p_i = \mathrm{logit}^{-1}(\hat\alpha_0 + \hat{\boldsymbol\alpha}^\top \mathbf{x}_i)$
+is a function of the same $\mathbf{x}_i$ that enters Model 2, so $\theta_p$ is separated
+from $\boldsymbol\theta$ only by the curvature of the logit. The wide interval for $\theta_p$
+reflects this, not a weak ORR--PFS association. A joint model with latent $p_i$ informed by
+the observed responders is the principled alternative.
+
+# Notes
+
+* ORR is reported as a proportion; $Y_i$ is reconstructed by rounding $\text{ORR}_i \cdot n_i$.
+* Arms from the same trial are treated as independent. A trial-level random effect would
+  account for their correlation.
+* Overlapping or post-treatment subgroups (NCT01523587 mainland China subgroup,
+  NCT03850444 KEYNOTE-042 China study, NCT01774721 skin-AE subgroups, NCT01038661
+  maintenance-phase arms) were moved to the
+  `irrelevant_arms` sheet before fitting.
