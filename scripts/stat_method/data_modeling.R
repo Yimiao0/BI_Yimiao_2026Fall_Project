@@ -17,7 +17,8 @@
 #
 # Covariates are the six EDA covariates, derived as in EDA.R: median age and the
 # proportions female, ever-smoker (among known smoking status), ECOG 0, squamous,
-# and stage IV (among known stage I-IV); plus the first_line indicator and the
+# and stage IV (among known stage I-IV); plus the first_line and maintenance
+# indicators (maintenance arms also have first_line = 1), and the
 # 0/1 MOA components moa_* (all 0 = no active drug) and biomarker_matched (1 = the
 # population was selected on a validated predictive biomarker for a drug in the
 # regimen), from add_derived_variables.R.
@@ -50,7 +51,7 @@ MOA_COLS <- c("moa_chemo", "moa_immune_checkpoint", "moa_immune_other", "moa_ant
               "moa_targeted", "moa_other")
 
 DEFAULT_COVARIATES <- c("median_age", "female_prop", "tobacco_ever_prop", "ECOG_0_prop",
-                        "squamous_prop", "stage_IV_prop", "first_line", MOA_COLS,
+                        "squamous_prop", "stage_IV_prop", "first_line", "maintenance", MOA_COLS,
                         "biomarker_matched")
 
 STAGE_COLS <- c("stage_I_II", "stage_IIIA", "stage_IIIB", "stage_IIIB_wet", "stage_IIIC",

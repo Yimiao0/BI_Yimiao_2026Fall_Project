@@ -16,6 +16,7 @@ except smoking and stage, which use only patients with known status.
 | Squamous | $S_i$ | `squamous_count` / $n_i$ |
 | Stage IV | $G_i$ | `stage_IV` / (`stage_I_II` + `stage_IIIA` + `stage_IIIB` + `stage_IIIC` + `stage_IV`) |
 | First-line | $L_i$ | `first_line` (1 = first-line, incl. maintenance; 0 = pretreated) |
+| Maintenance | $R_i$ | `maintenance` (1 = maintenance after induction without progression, a subset of $L_i = 1$; 0 otherwise) |
 | Matched biomarker | $B_i$ | `biomarker_matched` (1 = population selected on a validated predictive biomarker for a drug in the regimen, e.g. EGFR mutation + EGFR TKI, ALK + ALK inhibitor, PD-L1 or TMB-high + checkpoint inhibitor; 0 otherwise) |
 | MOA components | $M_{i,k}$ | `moa_chemo`, `moa_immune_checkpoint`, `moa_immune_other`, `moa_antiangio`, `moa_targeted`, `moa_other` (0/1) |
 
@@ -26,7 +27,7 @@ $\mathcal{M} = (\text{chemo},\ \text{ICI},\ \text{other immune},\ \text{anti-ang
 $\mathbf{x}_i$ is the covariate vector of arm $i$ (the intercept is kept separate):
 
 $$
-\mathbf{x}_i = \big(\text{age}_i,\ F_i,\ T_i,\ E_i,\ S_i,\ G_i,\ L_i,\ (M_{i,k})_{k \in \mathcal{M}},\ B_i\big)^\top
+\mathbf{x}_i = \big(\text{age}_i,\ F_i,\ T_i,\ E_i,\ S_i,\ G_i,\ L_i,\ R_i,\ (M_{i,k})_{k \in \mathcal{M}},\ B_i\big)^\top
 $$
 
 Arms missing any covariate are excluded (complete cases).
@@ -53,7 +54,7 @@ $$
 \begin{aligned}
 \mathrm{logit}(p_i) = \alpha_0
 &+ \alpha_{\text{age}}\text{age}_i + \alpha_F F_i + \alpha_T T_i + \alpha_E E_i + \alpha_S S_i + \alpha_G G_i \\
-&+ \alpha_L L_i + \sum_{k \in \mathcal{M}} \alpha_{M,k} M_{i,k} + \alpha_B B_i
+&+ \alpha_L L_i + \alpha_R R_i + \sum_{k \in \mathcal{M}} \alpha_{M,k} M_{i,k} + \alpha_B B_i
 \end{aligned}
 $$
 

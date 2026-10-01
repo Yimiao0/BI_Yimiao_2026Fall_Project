@@ -169,9 +169,7 @@ p <- ggplot() +
   coord_fixed(xlim = c(-0.05, EXCL_X0 + EXCL_W + 0.05),
               ylim = c(y_t_top - TERM_H - 0.05, y_a_top + 0.65), expand = FALSE, clip = "off") +
   theme_void(base_family = FONT) +
-  labs(title = "NSCLC trial identification, filtering, and publication linkage") +
   theme(
-    plot.title = element_text(face = "bold", size = 20, color = "#1f2a24", margin = margin(b = 10)),
     plot.margin = margin(14, 16, 12, 16),
     plot.background = element_rect(fill = "white", color = NA)
   )

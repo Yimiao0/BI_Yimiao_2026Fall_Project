@@ -54,3 +54,6 @@ rsconnect/
 
 # Scratch/exploratory files -- never uploaded to git
 /tmp/
+
+# Presentation notes -- local only
+presentation.md

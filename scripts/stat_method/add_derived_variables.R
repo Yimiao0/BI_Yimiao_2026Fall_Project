@@ -1,6 +1,7 @@
 # Add derived variables to the claude_collected sheet and describe them in the
 # codebook sheet:
-#   first_line            0/1, placed after participants_trt_status
+#   first_line, maintenance
+#                         0/1, placed after participants_trt_status
 #   moa_chemo, moa_immune_checkpoint, moa_immune_other, moa_antiangio,
 #   moa_targeted, moa_other
 #                         0/1 MOA components, placed after moa
@@ -38,7 +39,10 @@ DERIVED <- list(
        cols = c(first_line = paste(
          "First-line indicator derived from participants_trt_status (1 = first-line,",
          "including maintenance after first-line induction and mixed populations >50%",
-         "treatment-naive; 0 = pretreated, or mixed populations not >50% treatment-naive)"))),
+         "treatment-naive; 0 = pretreated, or mixed populations not >50% treatment-naive)"),
+         maintenance = paste(
+           "Maintenance indicator derived from participants_trt_status (1 = maintenance after",
+           "induction without progression, a subset of first_line = 1; 0 otherwise)"))),
   list(file = "data/raw/moa_tabulation.csv", key = "moa",
        cols = c(
          moa_chemo = "1 if the regimen includes cytotoxic chemotherapy",

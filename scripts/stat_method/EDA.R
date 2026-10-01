@@ -227,13 +227,16 @@ print(arm_df %>%
                   q1 = quantile(value, 0.25), q3 = quantile(value, 0.75), .groups = "drop"),
       n = Inf)
 
-orr_pfs <- cor_tbl %>% filter(outcome == "ORR", variable == "mPFS_months")
+# Median PFS on a log axis, as in Model 2 (log mPFS); the line is fitted on the
+# log scale and Pearson r is for log mPFS (Spearman is unchanged by the log)
+orr_pfs <- cor_pair(mutate(arm_df, log_mPFS = log(mPFS_months)), "log_mPFS", "ORR")
 p_orr_pfs <- ggplot(filter(arm_df, !is.na(ORR), !is.na(mPFS_months)),
                     aes(ORR, mPFS_months)) +
   geom_point(alpha = 0.6, size = POINT_SIZE) +
   geom_smooth(method = "lm", se = TRUE, formula = y ~ x, linewidth = 1) +
-  labs(x = "ORR", y = "Median PFS (months)",
-       subtitle = bquote(atop(.(sprintf("n = %d; Pearson r = %.2f (p = %.2g)",
+  scale_y_log10(breaks = c(1, 2, 3, 5, 10, 20, 30)) +
+  labs(x = "ORR", y = "Median PFS (months, log scale)",
+       subtitle = bquote(atop(.(sprintf("n = %d; Pearson r (log mPFS) = %.2f (p = %.2g)",
                                         orr_pfs$n, orr_pfs$pearson_r, orr_pfs$pearson_p)),
                               "Spearman" ~ rho * .(sprintf(" = %.2f (p = %.2g)",
                                                            orr_pfs$spearman_rho, orr_pfs$spearman_p))))) +

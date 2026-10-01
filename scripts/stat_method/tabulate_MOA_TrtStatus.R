@@ -41,6 +41,10 @@
 #      that are mostly (>50%) treatment-naive
 #   0  all pretreated arms (second-line, later lines, lines unclear); mixed
 #      populations that are not mostly treatment-naive
+# and a maintenance indicator (maintenance, also written by
+# add_derived_variables.R): 1 for maintenance after induction without
+# progression (a subset of first_line = 1, whose ORR is measured after the
+# induction response), else 0
 #
 # The biomarker table has one row per distinct (biomarker_selection, moa) pair,
 # because whether a population is sensitive depends on the drug. It assigns
@@ -111,6 +115,8 @@ classify_first_line <- function(status, line) {
   s <- tolower(status)
   as.integer(line == "First-line" | grepl("maintenance", s) | status %in% MIXED_MOSTLY_NAIVE)
 }
+
+classify_maintenance <- function(status) as.integer(grepl("maintenance", tolower(status)))
 
 MOA_CATEGORIES <- c("Chemo alone", "Anti-angiogenic + chemo", "IO + chemo", "IO without chemo",
                     "Targeted therapy", "Other agent + chemo", "Other")
@@ -215,6 +221,7 @@ moa_tab <- bind_cols(moa_tab[, 1:2], classify_moa_components(moa_tab$moa), moa_t
 trtstatus_tab <- tabulate_column(arm_df, "participants_trt_status") %>%
   mutate(line_of_therapy = classify_line(participants_trt_status),
          first_line = classify_first_line(participants_trt_status, line_of_therapy),
+         maintenance = classify_maintenance(participants_trt_status),
          .after = 1)
 
 biomarker_tab <- arm_df %>%
@@ -237,6 +244,6 @@ cat(sprintf("participants_trt_status: %d distinct values -> %s\n",
 print(count(moa_tab, moa_category, wt = n_arms, name = "n_arms") %>% arrange(desc(n_arms)))
 cat("Arms per MOA component:\n")
 print(colSums(moa_tab[, MOA_COMPONENTS] * moa_tab$n_arms))
-print(count(trtstatus_tab, line_of_therapy, first_line, wt = n_arms, name = "n_arms"))
+print(count(trtstatus_tab, line_of_therapy, first_line, maintenance, wt = n_arms, name = "n_arms"))
 cat(sprintf("(biomarker_selection, moa): %d distinct pairs -> %s\n", nrow(biomarker_tab), BIOMARKER_OUT))
 print(count(biomarker_tab, biomarker_group, biomarker_matched, wt = n_arms, name = "n_arms"))

@@ -146,7 +146,7 @@ Europe PMC is a free public database of research papers (similar to PubMed). For
 The Step 2 counts feed Figure 2 (`scripts/data_collection_scripts/generate_prisma_figure_step2.R`).
 
 ### Step 3 — AI-assisted variable collection
-Claude Code extracts the stratum-arm-level variables below, starting with the open-access and free-access publications that passed the Step 2 Stage 2 screen. It reads each paper's full text (via Europe PMC or PubMed Central) and fills one row per stratum-arm, citing the source table or figure in `notes`. Every row is then checked by hand against the paper. If time allows, full texts of paywalled publications, and of free ones whose journal sites block automated access, will be downloaded manually as PDFs for Claude Code to extract from in the same way.
+Claude Code extracts the stratum-arm-level variables below, starting with the open-access and free-access publications that passed the Step 2 screen. It reads each paper's full text (via Europe PMC or PubMed Central) and fills one row per stratum-arm, citing the source table or figure in `notes`. Every row is then checked by hand against the paper. If time allows, full texts of paywalled publications, and of free ones whose journal sites block automated access, will be downloaded manually as PDFs for Claude Code to extract from in the same way.
 
 Step 3 has no script. Start Claude Code from the project root (`claude`) and use this prompt, editing the trial selection and target sheet as needed:
 

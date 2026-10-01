@@ -50,7 +50,7 @@ TERM_LABELS <- c(
   median_age = "Median age (years)", female_prop = "Female proportion",
   tobacco_ever_prop = "Ever-smoker proportion", ECOG_0_prop = "ECOG 0 proportion",
   squamous_prop = "Squamous proportion", stage_IV_prop = "Stage IV proportion",
-  first_line = "First-line", moa_chemo = "MOA: chemotherapy",
+  first_line = "First-line", maintenance = "Maintenance", moa_chemo = "MOA: chemotherapy",
   moa_immune_checkpoint = "MOA: immune checkpoint inhibitor",
   moa_immune_other = "MOA: other immune", moa_antiangio = "MOA: anti-angiogenic",
   moa_targeted = "MOA: targeted", moa_other = "MOA: other agent",
@@ -91,19 +91,20 @@ covariate or the outcome are excluded (complete cases), so each model uses fewer
 
 ```{r covariates}
 cov_tbl <- data.frame(
-  Symbol = c("$\\text{age}_i$", "$F_i$", "$T_i$", "$E_i$", "$S_i$", "$G_i$", "$L_i$", "$M_{i,k}$", "$B_i$"),
+  Symbol = c("$\\text{age}_i$", "$F_i$", "$T_i$", "$E_i$", "$S_i$", "$G_i$", "$L_i$", "$R_i$", "$M_{i,k}$", "$B_i$"),
   Covariate = c("Median age (years)", "Female proportion", "Ever-smoker proportion",
                 "ECOG 0 proportion", "Squamous proportion", "Stage IV proportion",
-                "First-line (0/1)", "MOA components (0/1 each)", "Matched biomarker (0/1)"),
+                "First-line (0/1)", "Maintenance (0/1)", "MOA components (0/1 each)", "Matched biomarker (0/1)"),
   Definition = c("median age", "female / $n_i$",
                  "ever / (ever + never), known smoking status only",
                  "ECOG 0 / $n_i$", "squamous / $n_i$",
                  "stage IV / stage I--IV, known stage only",
                  "1 = first-line incl.\\ maintenance; 0 = pretreated",
+                 "1 = maintenance after induction (subset of first-line)",
                  "chemo, ICI, other immune, anti-angio, targeted, other; all 0 = no active drug",
                  "1 = selected on a validated predictive biomarker for a drug in the regimen"),
   Missing = c(vapply(c("median_age", "female_prop", "tobacco_ever_prop", "ECOG_0_prop",
-                       "squamous_prop", "stage_IV_prop", "first_line"),
+                       "squamous_prop", "stage_IV_prop", "first_line", "maintenance"),
                      function(v) sum(is.na(arm_df[[v]])), integer(1), USE.NAMES = FALSE),
               sum(!complete.cases(arm_df[, MOA_COLS])), sum(is.na(arm_df$biomarker_matched)))
 )
@@ -112,7 +113,7 @@ kbl_tex(cov_tbl, "Covariates $\\mathbf{x}_i$ (number of arms missing each)",
   column_spec(3, width = "7cm")
 ```
 
-$\mathbf{x}_i = (\text{age}_i, F_i, T_i, E_i, S_i, G_i, L_i, M_{i,1}, \dots, M_{i,6}, B_i)^\top$;
+$\mathbf{x}_i = (\text{age}_i, F_i, T_i, E_i, S_i, G_i, L_i, R_i, M_{i,1}, \dots, M_{i,6}, B_i)^\top$;
 the intercept is kept separate. $n_i$ is the arm sample size.
 
 # Model 1: logistic models for ORR
