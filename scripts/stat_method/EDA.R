@@ -167,7 +167,7 @@ first_line_box <- function(df, outcome, y_limits) {
              label = trimws(sprintf("Wilcoxon rank-sum test\np = %.2g %s", test$p.value, stars))) +
     scale_fill_manual(values = FIRST_LINE_COLOURS, guide = "none") +
     scale_colour_manual(values = FIRST_LINE_COLOURS, guide = "none") +
-    scale_x_discrete(labels = c("First-line" = "First-\nline", "Pretreated" = "Pre-\ntreated")) +
+    scale_x_discrete(labels = c("First-line" = "First-\nline", "Pretreated" = "2+\nline")) +
     coord_cartesian(ylim = y_limits) +  # same limits and expansion as the scatters
     facet_wrap(~ panel) +
     labs(x = NULL, y = NULL) +
