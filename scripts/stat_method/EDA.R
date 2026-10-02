@@ -142,9 +142,9 @@ print(as.data.frame(cor_tbl))
 
 ## ---- Scatter plots -----------------------------------------------------
 
-FIRST_LINE_COLOURS <- c("First-line" = "#0072B2", "Pretreated" = "#D55E00")
+FIRST_LINE_COLOURS <- c("First-line" = "#0072B2", "2+ line" = "#D55E00")
 first_line_label <- function(x) {
-  factor(ifelse(x == 1, "First-line", "Pretreated"), levels = names(FIRST_LINE_COLOURS))
+  factor(ifelse(x == 1, "First-line", "2+ line"), levels = names(FIRST_LINE_COLOURS))
 }
 
 # Outcome by first-line status (maintenance counted as first-line), with n per
@@ -167,7 +167,7 @@ first_line_box <- function(df, outcome, y_limits) {
              label = trimws(sprintf("Wilcoxon rank-sum test\np = %.2g %s", test$p.value, stars))) +
     scale_fill_manual(values = FIRST_LINE_COLOURS, guide = "none") +
     scale_colour_manual(values = FIRST_LINE_COLOURS, guide = "none") +
-    scale_x_discrete(labels = c("First-line" = "First-\nline", "Pretreated" = "2+\nline")) +
+    scale_x_discrete(labels = c("First-line" = "First-\nline", "2+ line" = "2+\nline")) +
     coord_cartesian(ylim = y_limits) +  # same limits and expansion as the scatters
     facet_wrap(~ panel) +
     labs(x = NULL, y = NULL) +
