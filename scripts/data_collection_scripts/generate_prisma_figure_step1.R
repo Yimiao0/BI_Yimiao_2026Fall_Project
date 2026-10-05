@@ -114,7 +114,7 @@ pct <- function(x) sprintf("%.1f%%", 100 * x / n_candidates)
 
 excl1_text <- paste0(
   "Not meeting all Step 1 criteria:\n",
-  "\u2022 drug, biological, or combination product\n",
+  "\u2022 intervention type: drug, biological, or combination product\n",
   "\u2022 primary purpose = treatment\n",
   "\u2022 phase 1/2, 2, 2/3, or 3\n",
   "\u2022 number of participants reported"
