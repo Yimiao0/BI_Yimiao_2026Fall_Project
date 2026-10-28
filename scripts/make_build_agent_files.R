@@ -5,6 +5,7 @@
 # Input:  data/raw/step2_nct_publication_links_with_doi.csv
 #         data/raw/step3_stratum_arm_variables.xlsx
 # Output: build_agent/input_dois.csv            12 toy trials for the agent to read
+#         build_agent/input_dois.xlsx           same list as Excel, for tools that can't upload CSV
 #         build_agent/output_template.xlsx      empty sheets the agent fills, plus
 #                                               the codebook of the columns it fills
 #         build_agent/testing/expected_decisions.csv
@@ -41,6 +42,8 @@ input_dois <- links %>%
   select(nct_id, pmid, doi, access_type, citation = title_or_citation)
 stopifnot(nrow(input_dois) == length(TOY_NCT_IDS))
 write.csv(input_dois, file.path(OUT_DIR, "input_dois.csv"), row.names = FALSE, na = "")
+write.xlsx(input_dois, file.path(OUT_DIR, "input_dois.xlsx"), sheetName = "input_dois",
+           headerStyle = createStyle(textDecoration = "bold"), firstRow = TRUE)
 
 ## ---- Codebook: only the columns the agent fills ------------------------------
 # claude_collected also has columns derived later by tabulate_MOA_TrtStatus.R;
@@ -68,8 +71,8 @@ codebook <- cbind(sheet = "included_arms", codebook)
 # Columns of the excluded and failed_papers sheets.
 codebook_other <- tribble(
   ~sheet, ~column, ~type, ~description,
-  "excluded", "nct_id", "text", "ClinicalTrials.gov ID, from input_dois.csv",
-  "excluded", "doi", "text", "Publication DOI, from input_dois.csv",
+  "excluded", "nct_id", "text", "ClinicalTrials.gov ID, from the input DOI list (input_dois)",
+  "excluded", "doi", "text", "Publication DOI, from the input DOI list (input_dois)",
   "excluded", "exclusion_level", "text",
     "paper = the whole paper is out of scope (one row, arm_label and stratum blank); arm = one stratum-arm of a paper whose other arms are kept",
   "excluded", "arm_label", "text", "Short arm name, as it would appear in included_arms; blank for a paper-level row",

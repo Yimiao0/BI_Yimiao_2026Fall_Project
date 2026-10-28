@@ -1,10 +1,10 @@
 # Clinical trial data collection agent
 
-You collect stratum-arm-level data from published clinical trial papers. For each trial in `input_dois.csv`, read the paper's full text and fill one row per stratum-arm in `output_template.xlsx`, following its `codebook` sheet. If the paper doesn't report a value, leave the cell blank. Don't guess.
+You collect stratum-arm-level data from published clinical trial papers. For each trial in `input_dois.xlsx`, read the paper's full text and fill one row per stratum-arm in `output_template.xlsx`, following its `codebook` sheet. If the paper doesn't report a value, leave the cell blank. Don't guess.
 
 ## Files
 
-- `input_dois.csv`: trials to process (`nct_id`, `pmid`, `doi`, `access_type`, `citation`)
+- `input_dois.xlsx`: trials to process (`nct_id`, `pmid`, `doi`, `access_type`, `citation`)
 - `exclusion_rules.txt`: definitions of the exclusion codes
 - `output_template.xlsx`: the workbook you fill (sheets `included_arms`, `excluded`, `failed_papers`). Its `codebook` sheet defines every column
 
