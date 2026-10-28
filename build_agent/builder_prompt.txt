@@ -1,0 +1,49 @@
+################################################################################
+PROMPT 1: BUILD THE AGENT
+Where: the agent builder's chat
+Before pasting: upload these 4 files to the chat
+  agent_instructions.md, exclusion_rules.md, output_template.xlsx, input_dois.csv
+################################################################################
+
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> COPY FROM HERE >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+Build an agent that collects clinical trial data from published papers.
+
+Use the attached files as follows:
+- agent_instructions.md: use its full text, word for word, as the agent's
+  instructions (system prompt). Don't summarize, shorten or rewrite it.
+- exclusion_rules.md: add as a knowledge file. The agent must read it before
+  deciding which papers or arms to exclude.
+- output_template.xlsx: the workbook the agent fills in and saves. It has the
+  sheets included_arms, excluded, failed_papers and codebook. The codebook
+  sheet defines every column.
+- input_dois.csv: the list of trials (DOIs) the agent processes.
+
+The agent needs these capabilities:
+1. Open web pages and APIs to get full-text papers: www.ebi.ac.uk (Europe PMC),
+   pmc.ncbi.nlm.nih.gov and doi.org.
+2. Read and write Excel files, and save output_template.xlsx after every paper.
+3. Create and add to a text file (progress_log.txt).
+
+Before building, tell me:
+- whether you can give the agent each of these three capabilities, and what
+  the limits are (for example, file size, number of web requests, run time);
+- where the agent's instructions, knowledge files and output files will be
+  stored, so I can check them.
+
+Name the agent "Trial data collection agent".
+
+<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< COPY TO HERE <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+################################################################################
+PROMPT 2: START A RUN
+Where: the built agent's own chat (not the builder's)
+################################################################################
+
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> COPY FROM HERE >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+Process all trials in input_dois.csv following your instructions.
+Write results to output_template.xlsx and progress to progress_log.txt.
+
+<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< COPY TO HERE <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<

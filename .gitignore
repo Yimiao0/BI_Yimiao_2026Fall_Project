@@ -57,3 +57,10 @@ rsconnect/
 
 # Presentation notes -- local only
 presentation.md
+
+# Agent build files (small, public info)
+!build_agent/input_dois.csv
+!build_agent/output_template.xlsx
+
+# Excel lock files
+~$*
