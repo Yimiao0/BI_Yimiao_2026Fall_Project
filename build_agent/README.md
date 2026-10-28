@@ -11,13 +11,13 @@ The agent reads each trial's DOI, gets the paper's full text, and fills one row 
 | `output_template.xlsx` | Output file the agent writes to | Empty sheets `included_arms`, `excluded`, `failed_papers`, plus a `codebook` sheet defining every column of those three sheets, including the exclusion and failure codes |
 | `input_dois.csv` / `input_dois.xlsx` | Input file (same list; use the `.xlsx` if the builder can't upload CSV) | Toy set of 12 trials, chosen from the 170 whose free full text mentions ORR, PFS and Kaplan-Meier. They cover every kind of decision: 5 included only, 2 with some arms excluded, 5 excluded as whole papers |
 
-If the builder can't upload `.md` or `.csv` files, upload `agent_instructions.txt`, `exclusion_rules.txt` and `input_dois.xlsx` instead. The `.txt` files have the same content as the `.md` files, but refer to `.txt` and `input_dois.xlsx` names; `builder_prompt.txt` uses the `.txt` names. After editing a `.md` file, recreate its `.txt` copy (see "Regenerating the data files").
+If the builder can't upload `.md` or `.csv` files, upload `agent_instructions.txt`, `exclusion_rules.txt` and `input_dois.xlsx` instead. The `.txt` files have the same content as the `.md` files, but refer to `.txt` and `input_dois.xlsx` names; `agent_setup.txt` uses the `.txt` names. After editing a `.md` file, recreate its `.txt` copy (see "Regenerating the data files").
 
 If the builder has only one place for files, upload everything and paste `agent_instructions.md` into the instructions box as well.
 
 **Check before building:** the agent must be able to open web pages (Europe PMC, PubMed Central, doi.org). If the builder can't make web requests, the agent will need the papers uploaded as PDFs.
 
-Prompts to paste are in `builder_prompt.txt`: one for the agent builder, and one to start a run in the agent's own chat. It's for you; don't upload it.
+`agent_setup.txt` lists what to enter in each field when building the agent (name, description, instructions, knowledge files) and the prompt that starts a run. It's for you; don't upload it.
 
 ## Output
 

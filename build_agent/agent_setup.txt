@@ -1,0 +1,40 @@
+################################################################################
+AGENT SETUP
+What to enter in each field of the agent-building interface.
+################################################################################
+
+
+=== NAME ===
+
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> COPY FROM HERE >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Trial data collection agent
+<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< COPY TO HERE <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+=== DESCRIPTION ===
+
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> COPY FROM HERE >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Reads published clinical trial papers from a list of DOIs and collects arm-level baseline characteristics, ORR and median PFS into an Excel workbook. Excludes papers and arms outside the analysis population with a reason code, and logs papers it can't access.
+<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< COPY TO HERE <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+=== INSTRUCTIONS ===
+
+Paste the full contents of agent_instructions.txt. Don't shorten it.
+
+
+=== KNOWLEDGE / FILES ===
+
+Upload these 3 files:
+  exclusion_rules.txt
+  output_template.xlsx
+  input_dois.xlsx
+
+
+=== START A RUN ===
+Where: the agent's chat, once it's built
+
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> COPY FROM HERE >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Process all trials in input_dois.xlsx following your instructions.
+Write results to output_template.xlsx and progress to progress_log.txt.
+<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< COPY TO HERE <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
