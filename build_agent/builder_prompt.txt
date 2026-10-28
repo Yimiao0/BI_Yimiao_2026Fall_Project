@@ -2,7 +2,7 @@
 PROMPT 1: BUILD THE AGENT
 Where: the agent builder's chat
 Before pasting: upload these 4 files to the chat
-  agent_instructions.md, exclusion_rules.md, output_template.xlsx, input_dois.csv
+  agent_instructions.txt, exclusion_rules.txt, output_template.xlsx, input_dois.csv
 ################################################################################
 
 >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> COPY FROM HERE >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
@@ -10,9 +10,9 @@ Before pasting: upload these 4 files to the chat
 Build an agent that collects clinical trial data from published papers.
 
 Use the attached files as follows:
-- agent_instructions.md: use its full text, word for word, as the agent's
+- agent_instructions.txt: use its full text, word for word, as the agent's
   instructions (system prompt). Don't summarize, shorten or rewrite it.
-- exclusion_rules.md: add as a knowledge file. The agent must read it before
+- exclusion_rules.txt: add as a knowledge file. The agent must read it before
   deciding which papers or arms to exclude.
 - output_template.xlsx: the workbook the agent fills in and saves. It has the
   sheets included_arms, excluded, failed_papers and codebook. The codebook
