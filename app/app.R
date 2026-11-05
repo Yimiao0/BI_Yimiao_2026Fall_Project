@@ -34,12 +34,26 @@ read_instructions <- function() {
 ## ---- UI -----------------------------------------------------------------
 
 progress_card <- function(id) {
+  # fillable = FALSE stops the card from squeezing the bar to zero height
+  # when the log is long.
   card(
+    fill = FALSE,
     card_header("Progress"),
-    uiOutput(paste0(id, "_bar")),
-    div(style = "max-height: 220px; overflow-y: auto; font-family: monospace; font-size: 0.8em;",
-        uiOutput(paste0(id, "_log")))
+    card_body(
+      fillable = FALSE,
+      uiOutput(paste0(id, "_bar")),
+      div(style = "height: 130px; overflow-y: auto; font-family: monospace; font-size: 0.8em; margin-top: 0.75rem;",
+          uiOutput(paste0(id, "_log")))
+    )
   )
+}
+
+# Card for a results table. It's never squeezed by the cards above it: it is
+# at least 500px tall and grows to fit the 10 rows on a page (rows with long
+# citations wrap onto two lines). The page scrolls when the window is small.
+table_card <- function(header, output) {
+  card(fill = FALSE, full_screen = TRUE, header,
+       card_body(fillable = FALSE, style = "min-height: 500px;", output))
 }
 
 search_tab <- nav_panel(
@@ -66,9 +80,10 @@ search_tab <- nav_panel(
       ),
       input_task_button("search", "Search", icon = icon("magnifying-glass"))
     ),
+    fillable = FALSE,
     uiOutput("search_summary"),
     progress_card("search"),
-    card(
+    table_card(
       card_header(class = "d-flex justify-content-between align-items-center",
                   "Publications found", uiOutput("doi_download_ui", inline = TRUE)),
       DT::DTOutput("doi_table")
@@ -96,11 +111,14 @@ collect_tab <- nav_panel(
       conditionalPanel("input.codebook_source == 'upload'",
         fileInput("codebook_file", NULL, accept = c(".xlsx", ".csv", ".txt", ".md"), placeholder = "Codebook (.xlsx, .csv, .txt)")
       ),
+      numericInput("batch_size", "Papers per message to the agent", 10, min = 1, max = 20, step = 1),
+      helpText("Fewer round trips with more papers per message. If a message fails, its papers are retried one by one."),
       input_task_button("collect", "Run the agent", icon = icon("robot")),
       uiOutput("backend_note")
     ),
+    fillable = FALSE,
     progress_card("collect"),
-    card(
+    table_card(
       card_header(class = "d-flex justify-content-between align-items-center",
                   "Collected data", uiOutput("results_download_ui", inline = TRUE)),
       uiOutput("results_tabs")
@@ -137,7 +155,27 @@ begin with a flag such as `CHECK:`.
 
 ui <- page_navbar(
   title = "Trial data collection",
-  theme = bs_theme(version = 5, preset = "flatly"),
+  theme = bs_theme(version = 5, preset = "flatly") |>
+    # Smaller table text, and darker green for the tables' page bar (Previous / 1 2 3 / Next)
+    bs_add_rules("
+      .dataTables_wrapper { font-size: 0.85rem; }
+      /* Summary boxes: start contents at the top so titles line up even when one box has a note */
+      .summary-box .card-body { padding: 0 !important; }
+      .summary-box .value-box-area {
+        justify-content: flex-start !important; padding: 0.8rem 1rem 0.4rem !important; overflow: visible;
+      }
+      .summary-box .value-box-area > * { margin-bottom: 0.15rem; }
+      .dataTables_wrapper .pagination .page-link {
+        background-color: #0f7a61; border-color: #0f7a61; color: #fff;
+      }
+      .dataTables_wrapper .pagination .page-link:hover,
+      .dataTables_wrapper .pagination .page-item.active .page-link {
+        background-color: #08503f; border-color: #08503f; color: #fff;
+      }
+      .dataTables_wrapper .pagination .page-item.disabled .page-link {
+        background-color: #5fa898; border-color: #5fa898; color: #e6f2ef;
+      }
+    "),
   search_tab, collect_tab, help_tab
 )
 
@@ -222,13 +260,25 @@ server <- function(input, output, session) {
 
   output$search_summary <- renderUI({
     r <- search_result()
-    layout_column_wrap(
-      width = 1 / 4, fill = FALSE,
-      value_box("Trials matching search", r$counts$matched, showcase = icon("flask")),
-      value_box("Pass all filters", r$counts$candidates, showcase = icon("filter")),
-      value_box("No linked paper", r$counts$no_publication, showcase = icon("circle-xmark")),
-      value_box("Papers with a DOI", r$counts$dois, showcase = icon("file-lines"))
+    n <- r$counts
+    # Short boxes: small icon beside the title instead of a large one above it
+    box <- function(title, value, icon_name, ...) {
+      value_box(span(style = "white-space: nowrap;", icon(icon_name), title), value, ...,
+                fill = FALSE, height = "120px", class = "summary-box")
+    }
+    boxes <- list(
+      box("Matching trials", n$matched, "flask"),
+      box("Pass all filters", n$candidates, "filter"),
+      box("Papers with a DOI", n$dois, "file-lines")
     )
+    # Only shown when the Europe PMC access check was run
+    if (isTRUE(n$access_checked)) {
+      note <- sprintf("+ %d free to read", n$free_access)
+      if (n$access_failed > 0) note <- paste0(note, sprintf(", %d not checked", n$access_failed))
+      boxes[[length(boxes) + 1]] <- box("Open access", n$open_access, "lock-open",
+                        p(class = "mb-0", style = "font-size: 0.75rem;", note))
+    }
+    do.call(layout_column_wrap, c(list(width = 1 / length(boxes), fill = FALSE), boxes))
   })
 
   output$doi_table <- DT::renderDT({
@@ -277,7 +327,8 @@ server <- function(input, output, session) {
     future_promise({
       load_app_functions(args$app_dir)
       run_agent(args$dois, args$template_path, args$codebook_path, args$instructions,
-                progress = progress_writer(progress_path), token = args$token)
+                progress = progress_writer(progress_path), token = args$token,
+                batch_size = args$batch_size)
     }, seed = TRUE)
   }) |> bind_task_button("collect")
 
@@ -313,8 +364,10 @@ server <- function(input, output, session) {
       # here, where the Shiny session is available.
       token <- if (Sys.getenv("AGENT_BACKEND", "mock") == "copilot") copilot_token(session, APP_DIR) else NULL
 
+      batch_size <- if (is.na(input$batch_size)) 10 else min(max(round(input$batch_size), 1), 20)
+
       list(dois = dois, template_path = keep(template_path), codebook_path = keep(codebook_path),
-           token = token)
+           token = token, batch_size = batch_size)
     }, error = function(e) {
       showNotification(conditionMessage(e), type = "error", duration = 8)
       NULL

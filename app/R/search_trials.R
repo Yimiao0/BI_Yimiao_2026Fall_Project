@@ -243,7 +243,11 @@ search_trials <- function(condition, statuses, phases, intervention_types, purpo
     candidates = nrow(candidates),
     no_publication = sum(!links$publication_found),
     duplicate_doi = sum(dup),
-    dois = nrow(dois)
+    dois = nrow(dois),
+    access_checked = check_access,
+    open_access = sum(dois$access_type %in% "open_access"),
+    free_access = sum(dois$access_type %in% "free_access"),
+    access_failed = sum(dois$access_type %in% "lookup_failed")
   )
   progress(1, sprintf("Done: %d publications with a DOI", nrow(dois)))
   list(dois = dois, trials = trials, counts = counts)

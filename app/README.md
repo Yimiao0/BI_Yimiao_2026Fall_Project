@@ -7,17 +7,36 @@ A two-step web app for colleagues:
 
 The agent is currently a **placeholder** (test mode) that returns made-up rows, so the whole app can be tried before a real agent exists.
 
+## Demo
+
+**Step 1, before searching.** The app opens on this tab. Enter the disease or condition, tick the study phases and choose the recruitment status on the left. **More filters** holds the intervention type, primary purpose, enrollment and open-access options. Then click **Search**.
+
+![Step 1 when the app opens](screenshots/step1_beginningUI.png)
+
+**Step 1, searching.** The Progress card shows the progress bar and each stage as it runs (ClinicalTrials.gov, PubMed DOI lookup, Europe PMC access check), newest first.
+
+![Step 1 while the search runs](screenshots/step1_InProgress.png)
+
+**Step 1, results.** The summary boxes give the counts at each stage: trials matching the search, trials passing all filters, papers with a DOI, and (when the Europe PMC check is on) open-access papers, with the number free to read underneath. The table lists the papers, and **Download DOIs (.xlsx)** saves them for review.
+
+![Step 1 results for completed phase 2/3 NSCLC trials](screenshots/step1_results.png)
+
+**Step 2, collecting data.** Choose the DOI list (from step 1 or an uploaded file), the output template and the codebook, then click **Run the agent**. The orange box means the app is in test mode with the placeholder agent.
+
+![Step 2 before running the agent](screenshots/step2_beginningUI.png)
+
 ## Files
 
 | File | What it does |
 |---|---|
 | `app.R` | Page layout and app logic |
 | `R/search_trials.R` | Step 1: ClinicalTrials.gov search, filters, PubMed DOI lookup, Europe PMC access check. Same rules as `scripts/data_collection_scripts/01_*.R`, `01b_*.R` and the access part of `02_*.R` |
-| `R/agent.R` | Step 2: reads the template and codebook, calls the agent once per paper, writes the results into the template |
+| `R/agent.R` | Step 2: reads the template and codebook, sends papers to the agent in batches (10 per message by default), writes the results into the template |
 | `python/copilot_agent.py`, `requirements.txt` | Connection to the Copilot Studio agent through Microsoft's Python SDK |
 | `R/utils.R` | Progress reporting for long runs |
 | `defaults/` | Default template, agent instructions and exclusion rules, copied from `build_agent/` |
 | `manifest.json` | Package list Posit Connect needs to install the app |
+| `screenshots/` | Pictures of the app used in this README (not used by the app) |
 
 ## Run it on your computer
 
@@ -26,6 +45,8 @@ In R, from the project root:
 ```r
 shiny::runApp("app")
 ```
+
+**To stop the app**, click in the terminal where it's running and press **Ctrl + C** (also Ctrl on a Mac, not Cmd). The app is stopped when the R prompt `>` returns. Closing the browser tab doesn't stop it.
 
 ## Publish on Posit Connect from GitHub
 
@@ -51,13 +72,13 @@ Set these in Posit Connect under **Vars**, or in `~/.Renviron` locally. Never pu
 | `AGENT_BACKEND` | no | `mock` (default, placeholder agent), `copilot` (Copilot Studio agent) or `http` (other hosted agent) |
 | `COPILOT_CONNECTION_STRING` | with `copilot` | The connection string from Copilot Studio → Channels → App → Microsoft 365 Agents SDK |
 | `COPILOT_TENANT_ID`, `COPILOT_CLIENT_ID` | with `copilot`, on your computer only | Entra ID tenant and app registration, for signing in through the browser |
-| `COPILOT_TIMEOUT_SECONDS` | no | How long to wait for the agent per paper (default 900) |
+| `COPILOT_TIMEOUT_SECONDS` | no | Time allowed per paper in a message (default 300 s; at least 15 min per message) |
 | `AGENT_URL`, `AGENT_API_KEY` | with `http` | Web address and key of another hosted agent |
 | `NCBI_API_KEY` | no | Faster PubMed lookups (free key from NCBI) |
 
 ## Copilot Studio agent
 
-The app talks to the agent with Microsoft's Python SDK (`python/copilot_agent.py`), called from R through `reticulate`. Each paper is sent in a new conversation, and the agent replies with JSON rows that the app writes into the template. The agent runs under the signed-in colleague's Microsoft account.
+The app talks to the agent with Microsoft's Python SDK (`python/copilot_agent.py`), called from R through `reticulate`. Papers are sent in batches ("Papers per message" in step 2, default 10), each batch in a new conversation, and the agent replies with JSON rows that the app writes into the template. The agent runs under the signed-in colleague's Microsoft account.
 
 **One-time setup (needs IT / admins):**
 
@@ -69,7 +90,7 @@ The app talks to the agent with Microsoft's Python SDK (`python/copilot_agent.py
 
 **Agent instructions:** the app's message for each paper asks for one paper and a JSON reply (see `copilot_message()` in `R/agent.R`). Add a line to the agent's instructions in Copilot Studio so it doesn't try to write an Excel file, e.g.:
 
-> When a message gives one paper and asks for a JSON reply, process only that paper and reply with the JSON object only. Don't write files.
+> When a message lists papers and asks for a JSON reply, process each listed paper on its own and reply with the JSON object only. Don't write files.
 
 **Test on your computer first:**
 
@@ -79,7 +100,7 @@ python3.11 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
-Then put `AGENT_BACKEND=copilot`, `COPILOT_CONNECTION_STRING`, `COPILOT_TENANT_ID` and `COPILOT_CLIENT_ID` in `~/.Renviron`, restart R, and run the app. The first "Run the agent" opens a Microsoft sign-in page. Try 2–3 DOIs first.
+Then put `AGENT_BACKEND=copilot`, `COPILOT_CONNECTION_STRING`, `COPILOT_TENANT_ID` and `COPILOT_CLIENT_ID` in `~/.Renviron`, restart R, and run the app. The first "Run the agent" opens a Microsoft sign-in page. Try 2–3 DOIs first, then compare 1 and 10 papers per message on the same DOIs to check that batching doesn't lower quality.
 
 **On Posit Connect:** Connect builds the Python environment from `requirements.txt` (the version is recorded in `manifest.json`). Set `AGENT_BACKEND=copilot` and `COPILOT_CONNECTION_STRING` under **Vars**. Connect must have Python 3.10 or later.
 
@@ -87,7 +108,7 @@ Then put `AGENT_BACKEND=copilot`, `COPILOT_CONNECTION_STRING`, `COPILOT_TENANT_I
 
 ## Plugging in another agent
 
-The app only calls the agent through `agent_process_paper()` in `R/agent.R`, once per paper. The agent receives the paper (`nct_id`, `pmid`, `doi`, `access_type`, `citation`), the template's column names per sheet, the codebook text, and the instructions from `defaults/`. It returns rows per sheet, for example:
+The app only calls the agent through `agent_process_batch()` in `R/agent.R`. The Copilot Studio agent gets each batch in one message; the mock and `http` agents are called once per paper. The agent receives the paper (`nct_id`, `pmid`, `doi`, `access_type`, `citation`), the template's column names per sheet, the codebook text, and the instructions from `defaults/`. It returns rows per sheet, for example:
 
 ```json
 {"included_arms": [{"arm_label": "Arm A", "arm_sample_size": 120}],
@@ -96,7 +117,7 @@ The app only calls the agent through `agent_process_paper()` in `R/agent.R`, onc
 ```
 
 - **An agent with a simple web API:** make it accept and return that JSON (the contract is at the top of `agent_http()`), then set `AGENT_BACKEND=http`, `AGENT_URL` and `AGENT_API_KEY`.
-- **Any other agent** (e.g. Copilot Studio through Direct Line, or a model API): write a new `agent_<name>()` function with the same arguments and return value as `agent_mock()`, and add it to the `switch()` in `agent_process_paper()`.
+- **Any other agent** (e.g. Copilot Studio through Direct Line, or a model API): write a new `agent_<name>()` function with the same arguments and return value as `agent_mock()`, and add it to the `switch()` in `agent_process_batch()`.
 
 The rest of the app doesn't change.
 

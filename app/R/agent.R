@@ -1,7 +1,7 @@
 # Step 2 of the app: send each paper to the data-collection agent and gather
 # its rows into the output template.
 #
-# The app only talks to the agent through agent_process_paper(). Which agent
+# The app only talks to the agent through agent_process_batch(). Which agent
 # answers is set by the AGENT_BACKEND environment variable:
 #   "mock" (default) - placeholder answers, no external service; for testing the app
 #   "http"           - a hosted agent reached over HTTP (AGENT_URL, AGENT_API_KEY);
@@ -10,7 +10,7 @@
 #                      (python/copilot_agent.py); see app/README.md for setup
 # To plug in a different agent (e.g. Copilot Studio via Direct Line), write
 # another agent_<name>() function with the same arguments and return value,
-# and add it to agent_process_paper().
+# and add it to agent_process_batch().
 
 CODEBOOK_SHEET <- "codebook"
 
@@ -118,16 +118,23 @@ copilot_py <- local({
 #' The message sent to the agent for one paper. The agent's own instructions
 #' (set in Copilot Studio) cover how to read papers; this message says which
 #' paper and the exact reply format the app can read.
-copilot_message <- function(paper, columns, codebook) {
+#' `papers` is a data frame of one or more papers (rows of the DOI list).
+copilot_message <- function(papers, columns, codebook) {
   sheets <- paste(sprintf('- "%s": %s', names(columns),
                           vapply(columns, paste, character(1), collapse = ", ")), collapse = "\n")
+  paper_list <- paste(sprintf(
+    "%d. nct_id: %s; pmid: %s; doi: %s; access_type: %s; citation: %s",
+    seq_len(nrow(papers)), papers$nct_id, papers$pmid, papers$doi, papers$access_type, papers$citation
+  ), collapse = "\n")
+  n <- nrow(papers)
   paste0(
-    "Process this one paper following your instructions.\n\n",
-    "Paper:\n",
-    sprintf("- nct_id: %s\n- pmid: %s\n- doi: %s\n- access_type: %s\n- citation: %s\n\n",
-            paper$nct_id, paper$pmid, paper$doi, paper$access_type, paper$citation),
+    if (n == 1) "Process this one paper" else sprintf("Process these %d papers, each on its own,", n),
+    " following your instructions.\n\n",
+    "Papers:\n", paper_list, "\n\n",
     "Reply with one JSON object only, no other text. Its keys are sheet names, ",
     "each holding a list of rows; each row is an object keyed by column name. ",
+    "Every row must include the paper's doi and nct_id. Every paper must appear in at least one sheet ",
+    "(as data rows, an exclusion, or a failure). ",
     "Use null for values not reported. Leave out sheets with no rows.\n",
     "Sheets and columns:\n", sheets, "\n\n",
     "Codebook:\n", codebook
@@ -145,12 +152,15 @@ parse_agent_json <- function(reply) {
   lapply(body, function(rows) if (length(rows) == 0) data.frame() else as.data.frame(rows))
 }
 
-agent_copilot <- function(paper, columns, codebook, instructions, paper_index, token = NULL) {
+#' Send a batch of papers (one or more) to the Copilot Studio agent in one
+#' message. Time limit: COPILOT_TIMEOUT_SECONDS (default 300) per paper, at
+#' least 15 minutes per message.
+agent_copilot <- function(papers, columns, codebook, token = NULL) {
   url <- Sys.getenv("COPILOT_CONNECTION_STRING")
   if (!nzchar(url)) stop("AGENT_BACKEND is 'copilot' but COPILOT_CONNECTION_STRING is not set.")
   if (is.null(token) || !nzchar(token)) stop("No Microsoft sign-in token for the Copilot Studio agent.")
-  reply <- copilot_py()$ask_agent(url, token, copilot_message(paper, columns, codebook),
-                                  as.numeric(Sys.getenv("COPILOT_TIMEOUT_SECONDS", "900")))
+  timeout <- max(900, as.numeric(Sys.getenv("COPILOT_TIMEOUT_SECONDS", "300")) * nrow(papers))
+  reply <- copilot_py()$ask_agent(url, token, copilot_message(papers, columns, codebook), timeout)
   parse_agent_json(reply)
 }
 
@@ -174,16 +184,44 @@ copilot_token <- function(session, app_dir) {
                                       file.path(app_dir, ".token_cache.json"))
 }
 
-#' The one function the app calls per paper. Returns a named list of data
-#' frames (one per template sheet); sheets with no rows can be left out.
-agent_process_paper <- function(paper, columns, codebook, instructions, paper_index = 1, token = NULL) {
+#' The one function the app calls per batch of papers (a data frame of one or
+#' more rows of the DOI list). Returns a named list of data frames, one per
+#' template sheet; sheets with no rows can be left out. Every row should carry
+#' the doi of the paper it belongs to.
+#'
+#' The Copilot Studio agent gets the whole batch in one message. The mock and
+#' http agents take one paper per call, so they are called once per paper.
+agent_process_batch <- function(papers, columns, codebook, instructions, first_index = 1, token = NULL) {
   backend <- Sys.getenv("AGENT_BACKEND", "mock")
-  switch(backend,
-    mock = agent_mock(paper, columns, codebook, instructions, paper_index),
-    http = agent_http(paper, columns, codebook, instructions, paper_index),
-    copilot = agent_copilot(paper, columns, codebook, instructions, paper_index, token),
-    stop(sprintf("Unknown AGENT_BACKEND '%s'.", backend))
-  )
+  if (backend == "copilot") return(agent_copilot(papers, columns, codebook, token))
+
+  one <- switch(backend, mock = agent_mock, http = agent_http,
+                stop(sprintf("Unknown AGENT_BACKEND '%s'.", backend)))
+  outs <- lapply(seq_len(nrow(papers)), function(k) {
+    paper <- as.list(papers[k, ])
+    tag_rows(one(paper, columns, codebook, instructions, first_index + k - 1), paper)
+  })
+  combine_outputs(outs)
+}
+
+#' Add the paper's doi and nct_id to rows that lack them (only safe when the
+#' output is known to be for this one paper).
+tag_rows <- function(out, paper) {
+  lapply(out, function(df) {
+    if (NROW(df) == 0) return(df)
+    if (!"doi" %in% names(df)) df$doi <- paper$doi
+    if (!"nct_id" %in% names(df)) df$nct_id <- paper$nct_id
+    df
+  })
+}
+
+#' Stack several outputs (named lists of data frames) sheet by sheet.
+combine_outputs <- function(outs) {
+  sheets <- unique(unlist(lapply(outs, names)))
+  setNames(lapply(sheets, function(s) {
+    dfs <- Filter(function(d) NROW(d) > 0, lapply(outs, `[[`, s))
+    dplyr::bind_rows(lapply(dfs, function(d) dplyr::mutate(d, dplyr::across(dplyr::everything(), as.character))))
+  }), sheets)
 }
 
 ## ---- Run over all papers ------------------------------------------------
@@ -196,39 +234,70 @@ conform <- function(df, cols) {
   df[, cols, drop = FALSE]
 }
 
-#' Process every paper. A paper whose agent call fails is logged in
-#' failed_papers (when the template has that sheet) and the run continues.
-run_agent <- function(dois, template_path, codebook_path = NULL, instructions = "",
-                      progress = function(...) NULL, token = NULL) {
-  columns <- read_template(template_path)
-  codebook <- read_codebook(codebook_path, template_path)
-  results <- setNames(vector("list", length(columns)), names(columns))
-  for (s in names(columns)) results[[s]] <- list()
+#' A failed_papers row for each paper, with the reason.
+failure_rows <- function(papers, reason) {
+  list(failed_papers = data.frame(nct_id = papers$nct_id, doi = papers$doi, reason = reason))
+}
 
-  n <- nrow(dois)
-  progress(0, sprintf("Starting: %d papers, agent backend '%s'", n, Sys.getenv("AGENT_BACKEND", "mock")))
-  for (i in seq_len(n)) {
-    paper <- as.list(dois[i, c("nct_id", "pmid", "doi", "access_type", "citation")])
-    out <- tryCatch(
-      agent_process_paper(paper, columns, codebook, instructions, paper_index = i, token = token),
-      error = function(e) {
-        list(failed_papers = data.frame(nct_id = paper$nct_id, doi = paper$doi,
-                                        reason = paste("Agent error:", conditionMessage(e))))
-      }
-    )
-    for (s in intersect(names(out), names(columns))) {
-      if (NROW(out[[s]]) > 0) {
-        df <- out[[s]]
-        if (!"doi" %in% names(df)) df$doi <- paper$doi
-        if (!"nct_id" %in% names(df)) df$nct_id <- paper$nct_id
-        results[[s]][[length(results[[s]]) + 1]] <- df
-      }
-    }
-    progress(i / n, sprintf("Paper %d of %d done: %s", i, n, paper$doi))
+#' Process one batch. If the whole batch fails (e.g. the agent's reply can't
+#' be read), retry its papers one by one so one bad paper doesn't lose the
+#' rest. Papers the agent skipped are logged in failed_papers.
+process_batch_safely <- function(papers, columns, codebook, instructions, first_index, token, progress) {
+  out <- tryCatch(
+    agent_process_batch(papers, columns, codebook, instructions, first_index, token),
+    error = function(e) e
+  )
+  if (inherits(out, "error")) {
+    if (nrow(papers) == 1) return(failure_rows(papers, paste("Agent error:", conditionMessage(out))))
+    progress(NA, sprintf("Batch failed (%s); retrying its %d papers one by one",
+                         substr(conditionMessage(out), 1, 120), nrow(papers)))
+    return(combine_outputs(lapply(seq_len(nrow(papers)), function(k) {
+      process_batch_safely(papers[k, , drop = FALSE], columns, codebook, instructions,
+                           first_index + k - 1, token, progress)
+    })))
   }
 
+  # A one-paper batch: rows without a doi belong to that paper.
+  if (nrow(papers) == 1) out <- tag_rows(out, as.list(papers[1, ]))
+
+  # Papers that appear in no sheet at all
+  seen <- tolower(unlist(lapply(out, function(df) if ("doi" %in% names(df)) df$doi)))
+  missing <- papers[!tolower(papers$doi) %in% seen, , drop = FALSE]
+  if (nrow(missing) > 0) out <- combine_outputs(list(out, failure_rows(missing, "The agent returned nothing for this paper")))
+  out
+}
+
+#' Process every paper, `batch_size` papers per message to the agent. A paper
+#' that can't be processed is logged in failed_papers (when the template has
+#' that sheet) and the run continues.
+run_agent <- function(dois, template_path, codebook_path = NULL, instructions = "",
+                      progress = function(...) NULL, token = NULL, batch_size = 10) {
+  columns <- read_template(template_path)
+  codebook <- read_codebook(codebook_path, template_path)
+  dois <- dois[, c("nct_id", "pmid", "doi", "access_type", "citation")]
+
+  n <- nrow(dois)
+  batch_size <- max(1L, as.integer(batch_size))
+  batches <- split(seq_len(n), ceiling(seq_len(n) / batch_size))
+  last_fraction <- 0
+  report <- function(fraction, message) {
+    if (!is.na(fraction)) last_fraction <<- fraction
+    progress(last_fraction, message)
+  }
+  report(0, sprintf("Starting: %d papers in %d messages of up to %d papers, agent backend '%s'",
+                    n, length(batches), batch_size, Sys.getenv("AGENT_BACKEND", "mock")))
+
+  outs <- vector("list", length(batches))
+  for (b in seq_along(batches)) {
+    idx <- batches[[b]]
+    outs[[b]] <- process_batch_safely(dois[idx, , drop = FALSE], columns, codebook, instructions,
+                                      idx[1], token, report)
+    report(max(idx) / n, sprintf("Papers %d-%d of %d done", idx[1], max(idx), n))
+  }
+  results <- combine_outputs(outs)
+
   sheets <- lapply(names(columns), function(s) {
-    rows <- dplyr::bind_rows(lapply(results[[s]], function(d) dplyr::mutate(d, dplyr::across(dplyr::everything(), as.character))))
+    rows <- results[[s]] %||% data.frame()
     if (nrow(rows) == 0) rows <- data.frame(matrix(nrow = 0, ncol = 0))
     df <- conform(rows, columns[[s]])
     if ("arm_id" %in% names(df) && nrow(df) > 0 && all(is.na(df$arm_id))) df$arm_id <- seq_len(nrow(df))
