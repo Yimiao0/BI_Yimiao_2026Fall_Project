@@ -65,3 +65,9 @@ presentation.md
 
 # Excel lock files
 ~$*
+
+# Shiny app defaults
+!app/defaults/output_template.xlsx
+app/.venv/
+app/.token_cache.json
+__pycache__/
