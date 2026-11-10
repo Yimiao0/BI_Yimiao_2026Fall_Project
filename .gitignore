@@ -59,9 +59,9 @@ rsconnect/
 presentation.md
 
 # Agent build files (small, public info)
-!build_agent/input_dois.csv
-!build_agent/input_dois.xlsx
-!build_agent/output_template.xlsx
+!build_agent/version1/input_dois.csv
+!build_agent/version1/input_dois.xlsx
+!build_agent/version1/output_template.xlsx
 
 # Excel lock files
 ~$*

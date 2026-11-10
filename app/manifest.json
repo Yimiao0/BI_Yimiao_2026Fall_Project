@@ -163,31 +163,6 @@
         "Archs": "RcppTOML.so.dSYM"
       }
     },
-    "XML": {
-      "Source": "CRAN",
-      "Repository": "https://cran.rstudio.com",
-      "description": {
-        "Package": "XML",
-        "Version": "3.99-0.18",
-        "Authors@R": "c(person(\"CRAN Team\", role = c('ctb', 'cre'),\n                    email = \"CRAN@r-project.org\",\n                    comment = \"de facto maintainer since 2013\"),\n             person(\"Duncan\", \"Temple Lang\", role = c(\"aut\"),\n                    email = \"duncan@r-project.org\",\n                    comment = c(ORCID = \"0000-0003-0159-1546\")),\n\t    person(\"Tomas\", \"Kalibera\", role = \"ctb\"))",
-        "Title": "Tools for Parsing and Generating XML Within R and S-Plus",
-        "Depends": "R (>= 4.0.0), methods, utils",
-        "Suggests": "bitops, RCurl",
-        "SystemRequirements": "libxml2 (>= 2.6.3)",
-        "Description": "Many approaches for both reading and\n        creating XML (and HTML) documents (including DTDs), both local\n        and accessible via HTTP or FTP.  Also offers access to an\n        'XPath' \"interpreter\".",
-        "URL": "https://www.omegahat.net/RSXML/",
-        "License": "BSD_3_clause + file LICENSE",
-        "Collate": "AAA.R DTD.R DTDClasses.R DTDRef.R SAXMethods.R XMLClasses.R\napplyDOM.R assignChild.R catalog.R createNode.R dynSupports.R\nerror.R flatTree.R nodeAccessors.R parseDTD.R schema.R\nsummary.R tangle.R toString.R tree.R version.R xmlErrorEnums.R\nxmlEventHandler.R xmlEventParse.R xmlHandler.R\nxmlInternalSource.R xmlOutputDOM.R xmlNodes.R xmlOutputBuffer.R\nxmlTree.R xmlTreeParse.R htmlParse.R hashTree.R zzz.R\nsupports.R parser.R libxmlFeatures.R xmlString.R saveXML.R\nnamespaces.R readHTMLTable.R reflection.R xmlToDataFrame.R\nbitList.R compare.R encoding.R fixNS.R xmlRoot.R serialize.R\nxmlMemoryMgmt.R keyValueDB.R solrDocs.R XMLRErrorInfo.R\nxincludes.R namespaceHandlers.R tangle1.R htmlLinks.R\nhtmlLists.R getDependencies.R getRelativeURL.R xmlIncludes.R\nsimplifyPath.R",
-        "NeedsCompilation": "yes",
-        "Packaged": "2025-01-01 22:13:11 UTC; ripley",
-        "Author": "CRAN Team [ctb, cre] (de facto maintainer since 2013),\n  Duncan Temple Lang [aut] (<https://orcid.org/0000-0003-0159-1546>),\n  Tomas Kalibera [ctb]",
-        "Maintainer": "CRAN Team <CRAN@r-project.org>",
-        "Repository": "CRAN",
-        "Date/Publication": "2025-01-01 22:15:47 UTC",
-        "Built": "R 4.3.3; aarch64-apple-darwin20; 2025-01-25 21:46:03 UTC; unix",
-        "Archs": "XML.so.dSYM"
-      }
-    },
     "askpass": {
       "Source": "CRAN",
       "Repository": "https://cran.rstudio.com",
@@ -1807,34 +1782,6 @@
         "Built": "R 4.3.0; ; 2023-08-30 17:51:12 UTC; unix"
       }
     },
-    "rentrez": {
-      "Source": "CRAN",
-      "Repository": "https://cran.rstudio.com",
-      "description": {
-        "Package": "rentrez",
-        "Version": "1.2.4",
-        "Date": "2025-06-11",
-        "Title": "'Entrez' in R",
-        "Authors@R": "c(\n person(\"David\", \"Winter\", role=c(\"aut\", \"cre\"), \n        email = \"david.winter@gmail.com\", \n        comment = c(ORCID = \"0000-0002-6165-0029\")),\n person(\"Scott\", \"Chamberlain\", role=\"ctb\", email = \"myrmecocystus@gmail.com\",\n        comment = c(ORCID = \"0000-0003-1444-9135\")),\n person(\"Han\",\"Guangchun\", role=c(\"ctb\"),email=\"hanguangchun@gmail.com\",\n        comment = c(ORCID = \"0000-0001-9277-2507\"))\n )",
-        "Depends": "R (>= 2.6.0)",
-        "Imports": "XML, httr (>= 0.5), jsonlite (>= 0.9)",
-        "Suggests": "testthat, knitr, rmarkdown",
-        "URL": "https://github.com/ropensci/rentrez/",
-        "BugReports": "https://github.com/ropensci/rentrez/issues/",
-        "Description": "Provides an R interface to the NCBI's 'EUtils' API, \n    allowing users to search databases like 'GenBank' \n    <https://www.ncbi.nlm.nih.gov/genbank/> and 'PubMed' \n    <https://pubmed.ncbi.nlm.nih.gov/>, process the \n    results of those searches and pull data into their R sessions.",
-        "VignetteBuilder": "knitr",
-        "License": "MIT + file LICENSE",
-        "Encoding": "UTF-8",
-        "RoxygenNote": "7.3.2",
-        "NeedsCompilation": "no",
-        "Packaged": "2025-06-11 10:15:33 UTC; dawinter",
-        "Author": "David Winter [aut, cre] (ORCID:\n    <https://orcid.org/0000-0002-6165-0029>),\n  Scott Chamberlain [ctb] (ORCID:\n    <https://orcid.org/0000-0003-1444-9135>),\n  Han Guangchun [ctb] (ORCID: <https://orcid.org/0000-0001-9277-2507>)",
-        "Maintainer": "David Winter <david.winter@gmail.com>",
-        "Repository": "CRAN",
-        "Date/Publication": "2025-06-11 11:00:02 UTC",
-        "Built": "R 4.3.3; ; 2025-06-11 11:22:49 UTC; unix"
-      }
-    },
     "reticulate": {
       "Source": "CRAN",
       "Repository": "https://cran.rstudio.com",
@@ -2449,25 +2396,25 @@
   },
   "files": {
     "R/agent.R": {
-      "checksum": "465a886d6ed0762064358a62c5223590"
+      "checksum": "812c24bbd29b0c9302a725c45121b431"
     },
     "R/search_trials.R": {
-      "checksum": "d05192f82aa6a0bef08efe41a0f9e7db"
+      "checksum": "041659d17ce048e7a46b96ab96af043b"
     },
     "R/utils.R": {
       "checksum": "6c2e18f30490f89cdc6748fece71869d"
     },
     "README.md": {
-      "checksum": "0a21fade0f07f921322717c336903e25"
+      "checksum": "4a284db07e32677f13e596707dd4b3fe"
     },
     "app.R": {
-      "checksum": "9a6f47a44353ec2ccb572d5d1766c795"
+      "checksum": "2a1fa6c680cfa8b5c2b4e8f1d9fdc40f"
     },
-    "defaults/agent_instructions.txt": {
-      "checksum": "22ba2b339bb22cd39a261424f4ec473e"
+    "defaults/collection_rules.txt": {
+      "checksum": "eba887857f1478048396975bd6d3e353"
     },
     "defaults/exclusion_rules.txt": {
-      "checksum": "5b6b8ace42f86cb3afe5ff143e98fdeb"
+      "checksum": "cefc54501aea9a1a8d835e20e758dbe5"
     },
     "defaults/output_template.xlsx": {
       "checksum": "3caa7341fecfee0157798f41f7fafc14"
@@ -2477,6 +2424,18 @@
     },
     "requirements.txt": {
       "checksum": "8a5c7c6782a0dd4a9a01bf77f3cb60d9"
+    },
+    "screenshots/step1_InProgress.png": {
+      "checksum": "2cd5135172dd766dc2a2d29d4884eda3"
+    },
+    "screenshots/step1_beginningUI.png": {
+      "checksum": "884d4c7be57999539c13c11f5954e0b7"
+    },
+    "screenshots/step1_results.png": {
+      "checksum": "4a35ac0120711fb390897fbf0c42fbd9"
+    },
+    "screenshots/step2_beginningUI.png": {
+      "checksum": "e2512f4f5e5b19e0b0e37fa4da0ccc83"
     }
   },
   "users": null

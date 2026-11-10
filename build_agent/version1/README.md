@@ -1,4 +1,6 @@
-# Files for building the data collection agent
+# Version 1: files for building the standalone data collection agent
+
+This is the first version of the agent, which had the DOI list and template uploaded as knowledge and filled `output_template.xlsx` itself. The current agent, called by the R Shiny app, is set up from the files one folder up (`../agent_setup.txt`).
 
 The agent reads each trial's DOI, gets the paper's full text, and fills one row per stratum-arm. As it goes, it excludes whole papers whose study is out of scope (for example, neoadjuvant or small-cell trials) and single arms that are out of scope (for example, non-NSCLC cohorts of a basket trial), each with a reason code. No filtering script is needed afterwards.
 
@@ -55,7 +57,7 @@ If the agent gets a rule wrong, add the case as an example under that rule in `e
 Rscript scripts/make_build_agent_files.R
 ```
 
-The two `.md` files are written by hand. To recreate their `.txt` copies after editing, run this from `build_agent/`:
+The two `.md` files are written by hand. To recreate their `.txt` copies after editing, run this from `build_agent/version1/`:
 
 ```bash
 for f in agent_instructions exclusion_rules; do

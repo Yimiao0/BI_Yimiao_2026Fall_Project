@@ -1,6 +1,6 @@
 ################################################################################
-AGENT SETUP
-What to enter in each field of the agent-building interface.
+AGENT SETUP (Copilot Studio agent called by the R Shiny app)
+What to enter in each field of Copilot Studio.
 ################################################################################
 
 
@@ -14,27 +14,37 @@ Trial data collection agent
 === DESCRIPTION ===
 
 >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> COPY FROM HERE >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-Reads published clinical trial papers from a list of DOIs and collects arm-level baseline characteristics, ORR and median PFS into an Excel workbook. Excludes papers and arms outside the analysis population with a reason code, and logs papers it can't access.
+Reads published clinical trial papers sent by the trial data collection app and returns arm-level data as JSON, following the codebook and rules in each message. Excludes papers and arms outside the analysis population with a reason code, and logs papers it can't access.
 <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< COPY TO HERE <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
 
 === INSTRUCTIONS ===
 
-Paste the full contents of agent_instructions.txt. Don't shorten it.
+Paste the full contents of copilot_instructions.md. Don't shorten it.
+The disease-specific rules are not pasted here: the app sends them with each
+batch. They are the default NSCLC rules (app/defaults/collection_rules.txt and
+app/defaults/exclusion_rules.txt), or a rules file the user uploads in step 2.
 
 
 === KNOWLEDGE / FILES ===
 
-Upload these 3 files:
-  exclusion_rules.txt
-  output_template.xlsx
-  input_dois.xlsx
+None. The app sends the papers, columns, codebook and rules with each batch.
+
+
+=== TOOLS ===
+
+The agent must be able to open web pages (Europe PMC and PubMed Central) to read
+the papers. Check which option your Copilot Studio offers, e.g. an HTTP request
+tool, a Europe PMC connector, or web browsing, and add it.
 
 
 === START A RUN ===
-Where: the agent's chat, once it's built
 
->>>>>>>>>>>>>>>>>>>>>>>>>>>>>> COPY FROM HERE >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-Process all trials in input_dois.xlsx following your instructions.
-Write results to output_template.xlsx and progress to progress_log.txt.
-<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< COPY TO HERE <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+Users don't talk to this agent in a chat box, as they would with Copilot in
+its app. Only the R Shiny app talks to it, in the background. 
+When a user clicks "Run the agent" or "Test the agent on 10
+papers" in R shiny app's step 2, the app sends the agent one message per 10 papers, containing
+the paper list, the template's columns, the codebook and the rules.
+
+To try the agent, set AGENT_BACKEND=copilot and click "Test the agent on 10
+papers" in step 2 of the app.

@@ -37,27 +37,32 @@ read_codebook <- function(codebook_path = NULL, template_path = NULL) {
   stop("No codebook: upload one, or use a template with a 'codebook' sheet.")
 }
 
-#' Read the DOI list (the app's own download, or any sheet with a doi column).
-read_doi_list <- function(path) {
+#' Read a paper list: the app's own download, or any sheet with a pmid, doi
+#' or pmcid column. Rows with none of the three are dropped.
+read_paper_list <- function(path) {
   sheets <- readxl::excel_sheets(path)
-  sheet <- if ("input_dois" %in% sheets) "input_dois" else sheets[1]
+  sheet <- intersect(c("input_papers", "input_dois"), sheets)[1]
+  if (is.na(sheet)) sheet <- sheets[1]
   df <- as.data.frame(readxl::read_excel(path, sheet = sheet, col_types = "text"))
-  if (!"doi" %in% names(df)) stop("The DOI file needs a column named 'doi'.")
-  for (col in c("nct_id", "pmid", "access_type", "citation")) if (!col %in% names(df)) df[[col]] <- NA_character_
-  df <- df[!is.na(df$doi) & nzchar(df$doi), ]
-  if (nrow(df) == 0) stop("The DOI file has no DOIs.")
+  if (!any(c("pmid", "doi", "pmcid") %in% names(df))) {
+    stop("The paper list needs a column named 'pmid', 'doi' or 'pmcid'.")
+  }
+  for (col in PAPER_COLUMNS) if (!col %in% names(df)) df[[col]] <- NA_character_
+  has_id <- function(x) !is.na(x) & nzchar(trimws(x))
+  df <- df[has_id(df$pmid) | has_id(df$doi) | has_id(df$pmcid), ]
+  if (nrow(df) == 0) stop("The paper list has no PubMed IDs, DOIs or PMCIDs.")
   df
 }
 
 ## ---- Backends -----------------------------------------------------------
 
 #' Placeholder agent: returns made-up rows in the template's shape so the
-#' whole app can be tested. Paywalled papers go to failed_papers, every 7th
+#' whole app can be tested. Papers that aren.t open access go to failed_papers, every 7th
 #' paper is excluded, the rest get two arms.
 agent_mock <- function(paper, columns, codebook, instructions, paper_index) {
   Sys.sleep(stats::runif(1, 0.5, 1.5))
   out <- list()
-  if (identical(paper$access_type, "paywalled") && "failed_papers" %in% names(columns)) {
+  if (!is.na(paper$access_type) && paper$access_type != "open_access" && "failed_papers" %in% names(columns)) {
     out$failed_papers <- data.frame(nct_id = paper$nct_id, doi = paper$doi,
                                     reason = "MOCK: no free full text")
   } else if (paper_index %% 7 == 0 && "excluded" %in% names(columns)) {
@@ -76,7 +81,7 @@ agent_mock <- function(paper, columns, codebook, instructions, paper_index) {
 #'
 #' HTTP contract (what the real agent must accept and return):
 #'   POST AGENT_URL, header "Authorization: Bearer <AGENT_API_KEY>", JSON body:
-#'     { "paper": {nct_id, pmid, doi, access_type, citation},
+#'     { "paper": {nct_id, pmid, pmcid, doi, access_type, citation},
 #'       "columns": {"<sheet>": ["col1", ...], ...},
 #'       "codebook": "<text>", "instructions": "<text>" }
 #'   Response JSON: {"<sheet>": [ {col: value, ...}, ... ], ...}
@@ -118,13 +123,13 @@ copilot_py <- local({
 #' The message sent to the agent for one paper. The agent's own instructions
 #' (set in Copilot Studio) cover how to read papers; this message says which
 #' paper and the exact reply format the app can read.
-#' `papers` is a data frame of one or more papers (rows of the DOI list).
-copilot_message <- function(papers, columns, codebook) {
+#' `papers` is a data frame of one or more papers (rows of the paper list).
+copilot_message <- function(papers, columns, codebook, rules = "") {
   sheets <- paste(sprintf('- "%s": %s', names(columns),
                           vapply(columns, paste, character(1), collapse = ", ")), collapse = "\n")
   paper_list <- paste(sprintf(
-    "%d. nct_id: %s; pmid: %s; doi: %s; access_type: %s; citation: %s",
-    seq_len(nrow(papers)), papers$nct_id, papers$pmid, papers$doi, papers$access_type, papers$citation
+    "%d. nct_id: %s; pmid: %s; pmcid: %s; doi: %s; access_type: %s; citation: %s",
+    seq_len(nrow(papers)), papers$nct_id, papers$pmid, papers$pmcid, papers$doi, papers$access_type, papers$citation
   ), collapse = "\n")
   n <- nrow(papers)
   paste0(
@@ -133,11 +138,12 @@ copilot_message <- function(papers, columns, codebook) {
     "Papers:\n", paper_list, "\n\n",
     "Reply with one JSON object only, no other text. Its keys are sheet names, ",
     "each holding a list of rows; each row is an object keyed by column name. ",
-    "Every row must include the paper's doi and nct_id. Every paper must appear in at least one sheet ",
+    "Every row must include the paper's nct_id, pmid and doi as listed (null if empty), even if a sheet has no column for them. Every paper must appear in at least one sheet ",
     "(as data rows, an exclusion, or a failure). ",
     "Use null for values not reported. Leave out sheets with no rows.\n",
     "Sheets and columns:\n", sheets, "\n\n",
-    "Codebook:\n", codebook
+    "Codebook:\n", codebook,
+    if (nzchar(rules)) paste0("\n\nRules:\n", rules)
   )
 }
 
@@ -155,12 +161,12 @@ parse_agent_json <- function(reply) {
 #' Send a batch of papers (one or more) to the Copilot Studio agent in one
 #' message. Time limit: COPILOT_TIMEOUT_SECONDS (default 300) per paper, at
 #' least 15 minutes per message.
-agent_copilot <- function(papers, columns, codebook, token = NULL) {
+agent_copilot <- function(papers, columns, codebook, instructions = "", token = NULL) {
   url <- Sys.getenv("COPILOT_CONNECTION_STRING")
   if (!nzchar(url)) stop("AGENT_BACKEND is 'copilot' but COPILOT_CONNECTION_STRING is not set.")
   if (is.null(token) || !nzchar(token)) stop("No Microsoft sign-in token for the Copilot Studio agent.")
   timeout <- max(900, as.numeric(Sys.getenv("COPILOT_TIMEOUT_SECONDS", "300")) * nrow(papers))
-  reply <- copilot_py()$ask_agent(url, token, copilot_message(papers, columns, codebook), timeout)
+  reply <- copilot_py()$ask_agent(url, token, copilot_message(papers, columns, codebook, instructions), timeout)
   parse_agent_json(reply)
 }
 
@@ -185,15 +191,15 @@ copilot_token <- function(session, app_dir) {
 }
 
 #' The one function the app calls per batch of papers (a data frame of one or
-#' more rows of the DOI list). Returns a named list of data frames, one per
+#' more rows of the paper list). Returns a named list of data frames, one per
 #' template sheet; sheets with no rows can be left out. Every row should carry
-#' the doi of the paper it belongs to.
+#' the nct_id, pmid and doi of the paper it belongs to.
 #'
 #' The Copilot Studio agent gets the whole batch in one message. The mock and
 #' http agents take one paper per call, so they are called once per paper.
 agent_process_batch <- function(papers, columns, codebook, instructions, first_index = 1, token = NULL) {
   backend <- Sys.getenv("AGENT_BACKEND", "mock")
-  if (backend == "copilot") return(agent_copilot(papers, columns, codebook, token))
+  if (backend == "copilot") return(agent_copilot(papers, columns, codebook, instructions, token))
 
   one <- switch(backend, mock = agent_mock, http = agent_http,
                 stop(sprintf("Unknown AGENT_BACKEND '%s'.", backend)))
@@ -204,15 +210,32 @@ agent_process_batch <- function(papers, columns, codebook, instructions, first_i
   combine_outputs(outs)
 }
 
-#' Add the paper's doi and nct_id to rows that lack them (only safe when the
-#' output is known to be for this one paper).
+#' Add the paper's IDs (nct_id, pmid, doi) to rows that lack them (only safe
+#' when the output is known to be for this one paper).
 tag_rows <- function(out, paper) {
   lapply(out, function(df) {
     if (NROW(df) == 0) return(df)
-    if (!"doi" %in% names(df)) df$doi <- paper$doi
-    if (!"nct_id" %in% names(df)) df$nct_id <- paper$nct_id
+    for (id in c("nct_id", "pmid", "doi")) {
+      if (!id %in% names(df)) df[[id]] <- paper[[id]]
+      else df[[id]] <- ifelse(is.na(df[[id]]), paper[[id]], df[[id]])
+    }
     df
   })
+}
+
+#' Which papers appear in some sheet of the output. Matched by PubMed ID or
+#' DOI; by NCT ID only for a paper with neither.
+papers_in_output <- function(papers, out) {
+  ids <- function(col) {
+    v <- unlist(lapply(out, function(df) if (col %in% names(df)) as.character(df[[col]])))
+    tolower(trimws(v[!is.na(v)]))
+  }
+  key <- function(x) tolower(trimws(as.character(x)))
+  has <- function(x) !is.na(x) & nzchar(trimws(x))
+  by_pmid <- has(papers$pmid) & key(papers$pmid) %in% ids("pmid")
+  by_doi <- has(papers$doi) & key(papers$doi) %in% ids("doi")
+  by_nct <- !has(papers$pmid) & !has(papers$doi) & key(papers$nct_id) %in% ids("nct_id")
+  by_pmid | by_doi | by_nct
 }
 
 #' Stack several outputs (named lists of data frames) sheet by sheet.
@@ -236,7 +259,7 @@ conform <- function(df, cols) {
 
 #' A failed_papers row for each paper, with the reason.
 failure_rows <- function(papers, reason) {
-  list(failed_papers = data.frame(nct_id = papers$nct_id, doi = papers$doi, reason = reason))
+  list(failed_papers = data.frame(nct_id = papers$nct_id, pmid = papers$pmid, doi = papers$doi, reason = reason))
 }
 
 #' Process one batch. If the whole batch fails (e.g. the agent's reply can't
@@ -257,26 +280,51 @@ process_batch_safely <- function(papers, columns, codebook, instructions, first_
     })))
   }
 
-  # A one-paper batch: rows without a doi belong to that paper.
+  # A one-paper batch: rows without IDs belong to that paper.
   if (nrow(papers) == 1) out <- tag_rows(out, as.list(papers[1, ]))
 
   # Papers that appear in no sheet at all
-  seen <- tolower(unlist(lapply(out, function(df) if ("doi" %in% names(df)) df$doi)))
-  missing <- papers[!tolower(papers$doi) %in% seen, , drop = FALSE]
+  missing <- papers[!papers_in_output(papers, out), , drop = FALSE]
   if (nrow(missing) > 0) out <- combine_outputs(list(out, failure_rows(missing, "The agent returned nothing for this paper")))
   out
+}
+
+#' Keep only open-access papers with a PMCID, the ones the agent can read.
+#' Papers with no access type (e.g. from an uploaded file) are checked in
+#' Europe PMC first.
+open_access_only <- function(papers, progress = function(...) NULL) {
+  unknown <- which(is.na(papers$access_type) | !nzchar(papers$access_type))
+  if (length(unknown) > 0) {
+    progress(0, sprintf("Checking open access in Europe PMC for %d papers", length(unknown)))
+    access <- classify_access(papers[unknown, , drop = FALSE])
+    papers$access_type[unknown] <- access$access_type
+    papers$pmcid[unknown] <- ifelse(is.na(papers$pmcid[unknown]), access$pmcid, papers$pmcid[unknown])
+    papers$doi[unknown] <- ifelse(is.na(papers$doi[unknown]), access$doi, papers$doi[unknown])
+  }
+  keep <- papers$access_type %in% "open_access" & !is.na(papers$pmcid) & nzchar(papers$pmcid)
+  if (!any(keep)) stop("None of the papers is open access with a PMCID, so the agent can't read them.")
+  if (any(!keep)) {
+    progress(0, sprintf("Skipping %d papers that aren't open access or have no PMCID; sending %d to the agent",
+                        sum(!keep), sum(keep)))
+  }
+  papers[keep, , drop = FALSE]
 }
 
 #' Process every paper, `batch_size` papers per message to the agent. A paper
 #' that can't be processed is logged in failed_papers (when the template has
 #' that sheet) and the run continues.
-run_agent <- function(dois, template_path, codebook_path = NULL, instructions = "",
-                      progress = function(...) NULL, token = NULL, batch_size = 10) {
+run_agent <- function(papers, template_path, codebook_path = NULL, instructions = "",
+                      progress = function(...) NULL, token = NULL, max_papers = Inf,
+                      batch_size = 10) {
   columns <- read_template(template_path)
   codebook <- read_codebook(codebook_path, template_path)
-  dois <- dois[, c("nct_id", "pmid", "doi", "access_type", "citation")]
+  papers <- open_access_only(papers[, PAPER_COLUMNS], progress)
 
-  n <- nrow(dois)
+  if (nrow(papers) > max_papers) {
+    papers <- papers[seq_len(max_papers), , drop = FALSE]
+    progress(0, sprintf("Test run: only the first %d open-access papers", max_papers))
+  }
+  n <- nrow(papers)
   batch_size <- max(1L, as.integer(batch_size))
   batches <- split(seq_len(n), ceiling(seq_len(n) / batch_size))
   last_fraction <- 0
@@ -290,11 +338,15 @@ run_agent <- function(dois, template_path, codebook_path = NULL, instructions = 
   outs <- vector("list", length(batches))
   for (b in seq_along(batches)) {
     idx <- batches[[b]]
-    outs[[b]] <- process_batch_safely(dois[idx, , drop = FALSE], columns, codebook, instructions,
+    outs[[b]] <- process_batch_safely(papers[idx, , drop = FALSE], columns, codebook, instructions,
                                       idx[1], token, report)
     report(max(idx) / n, sprintf("Papers %d-%d of %d done", idx[1], max(idx), n))
   }
   results <- combine_outputs(outs)
+  # Batches can't number rows across each other, so number arm_id here
+  if (NROW(results$included_arms) > 0 && "arm_id" %in% names(results$included_arms)) {
+    results$included_arms$arm_id <- as.character(seq_len(nrow(results$included_arms)))
+  }
 
   sheets <- lapply(names(columns), function(s) {
     rows <- results[[s]] %||% data.frame()

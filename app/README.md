@@ -2,26 +2,26 @@
 
 A two-step web app for colleagues:
 
-1. **Find publications.** Enter a disease, phase(s) and status. The app searches ClinicalTrials.gov, links each trial to its results paper in PubMed, optionally checks open access in Europe PMC, and returns the DOI list as Excel.
-2. **Collect data.** Give it the DOI list, an empty output template and a codebook. The data-collection agent reads each paper and fills the template, which the user downloads.
+1. **Find publications.** Enter a disease, phase(s) and status. The app searches ClinicalTrials.gov, links each trial to its results paper by PubMed ID, looks the papers up in Europe PMC (DOI, PubMed Central ID, open access), and returns the paper list as Excel.
+2. **Collect data.** Give it the paper list, an empty output template and a codebook. The data-collection agent reads each paper and fills the template, which the user downloads.
 
 The agent is currently a **placeholder** (test mode) that returns made-up rows, so the whole app can be tried before a real agent exists.
 
 ## Demo
 
-**Step 1, before searching.** The app opens on this tab. Enter the disease or condition, tick the study phases and choose the recruitment status on the left. **More filters** holds the intervention type, primary purpose, enrollment and open-access options. Then click **Search**.
+**Step 1, before searching.** The app opens on this tab. Enter the disease or condition, tick the study phases and choose the recruitment status on the left. **More filters** holds the intervention type, primary purpose and enrollment options. Then click **Search**.
 
 ![Step 1 when the app opens](screenshots/step1_beginningUI.png)
 
-**Step 1, searching.** The Progress card shows the progress bar and each stage as it runs (ClinicalTrials.gov, PubMed DOI lookup, Europe PMC access check), newest first.
+**Step 1, searching.** The Progress card shows the progress bar and each stage as it runs (ClinicalTrials.gov search, linking trials to papers, Europe PMC lookup), newest first.
 
 ![Step 1 while the search runs](screenshots/step1_InProgress.png)
 
-**Step 1, results.** The summary boxes give the counts at each stage: trials matching the search, trials passing all filters, papers with a DOI, and (when the Europe PMC check is on) open-access papers, with the number free to read underneath. The table lists the papers, and **Download DOIs (.xlsx)** saves them for review.
+**Step 1, results.** The summary boxes give the trials found (after all filters), the papers linked to them, and the open-access papers. The table lists the papers, and **Download papers (.xlsx)** saves them for review. The filter above the table chooses between open-access papers, which the AI agent can read through their PubMed Central ID (the default), and all linked papers. The same list goes to step 2; the Excel file also has every linked paper in a separate sheet.
 
 ![Step 1 results for completed phase 2/3 NSCLC trials](screenshots/step1_results.png)
 
-**Step 2, collecting data.** Choose the DOI list (from step 1 or an uploaded file), the output template and the codebook, then click **Run the agent**. The orange box means the app is in test mode with the placeholder agent.
+**Step 2, collecting data.** Choose the paper list (from step 1 or an uploaded file with a `pmid`, `doi` or `pmcid` column), the output template, the codebook and the rules (the default NSCLC rules, or your own .txt/.md file; **Download the default rules** shows what the agent gets), then click **Test the agent on 10 papers** to check the agent on the first 10 papers, or **Run the agent** for all of them. Only open-access papers (each has a PubMed Central ID) are sent to the agent; papers in an uploaded list with no `access_type` are checked in Europe PMC first. The orange box means the app is in test mode with the placeholder agent.
 
 ![Step 2 before running the agent](screenshots/step2_beginningUI.png)
 
@@ -30,11 +30,11 @@ The agent is currently a **placeholder** (test mode) that returns made-up rows, 
 | File | What it does |
 |---|---|
 | `app.R` | Page layout and app logic |
-| `R/search_trials.R` | Step 1: ClinicalTrials.gov search, filters, PubMed DOI lookup, Europe PMC access check. Same rules as `scripts/data_collection_scripts/01_*.R`, `01b_*.R` and the access part of `02_*.R` |
-| `R/agent.R` | Step 2: reads the template and codebook, sends papers to the agent in batches (10 per message by default), writes the results into the template |
+| `R/search_trials.R` | Step 1: ClinicalTrials.gov search and filters (same rules as `scripts/data_collection_scripts/01_*.R`), linking each trial to its first results paper with a PubMed ID, and the Europe PMC lookup |
+| `R/agent.R` | Step 2: reads the template and codebook, sends papers to the agent in batches of 10 per message, writes the results into the template |
 | `python/copilot_agent.py`, `requirements.txt` | Connection to the Copilot Studio agent through Microsoft's Python SDK |
 | `R/utils.R` | Progress reporting for long runs |
-| `defaults/` | Default template, agent instructions and exclusion rules, copied from `build_agent/` |
+| `defaults/` | Default template, plus the collection and exclusion rules sent to the agent with each batch |
 | `manifest.json` | Package list Posit Connect needs to install the app |
 | `screenshots/` | Pictures of the app used in this README (not used by the app) |
 
@@ -74,11 +74,10 @@ Set these in Posit Connect under **Vars**, or in `~/.Renviron` locally. Never pu
 | `COPILOT_TENANT_ID`, `COPILOT_CLIENT_ID` | with `copilot`, on your computer only | Entra ID tenant and app registration, for signing in through the browser |
 | `COPILOT_TIMEOUT_SECONDS` | no | Time allowed per paper in a message (default 300 s; at least 15 min per message) |
 | `AGENT_URL`, `AGENT_API_KEY` | with `http` | Web address and key of another hosted agent |
-| `NCBI_API_KEY` | no | Faster PubMed lookups (free key from NCBI) |
 
 ## Copilot Studio agent
 
-The app talks to the agent with Microsoft's Python SDK (`python/copilot_agent.py`), called from R through `reticulate`. Papers are sent in batches ("Papers per message" in step 2, default 10), each batch in a new conversation, and the agent replies with JSON rows that the app writes into the template. The agent runs under the signed-in colleague's Microsoft account.
+The app talks to the agent with Microsoft's Python SDK (`python/copilot_agent.py`), called from R through `reticulate`. Papers are sent in batches of 10, each batch in a new conversation, and the agent replies with JSON rows that the app writes into the template. The agent runs under the signed-in colleague's Microsoft account.
 
 **One-time setup (needs IT / admins):**
 
@@ -88,9 +87,7 @@ The app talks to the agent with Microsoft's Python SDK (`python/copilot_agent.py
 2. **Posit Connect OAuth integration** for Microsoft Entra ID using that app registration, with scope `https://api.powerplatform.com/.default` (plus `offline_access`). Then attach the integration to this app (app settings → Access → Integrations).
 3. **Publish the agent** in Copilot Studio and share it with the colleagues who will use the app.
 
-**Agent instructions:** the app's message for each paper asks for one paper and a JSON reply (see `copilot_message()` in `R/agent.R`). Add a line to the agent's instructions in Copilot Studio so it doesn't try to write an Excel file, e.g.:
-
-> When a message lists papers and asks for a JSON reply, process each listed paper on its own and reply with the JSON object only. Don't write files.
+**Agent setup:** follow `build_agent/agent_setup.txt`. In short, paste `build_agent/copilot_instructions.md` as the agent's instructions, upload no knowledge files, and give the agent a tool that can open web pages. The instructions are general: each message from the app (see `copilot_message()` in `R/agent.R`) carries the papers, the template's columns, the codebook and the disease rules from `app/defaults/collection_rules.txt` and `exclusion_rules.txt`. Users can replace them for a run by uploading their own rules in step 2; to change the defaults, edit those files. The agent doesn't need to change. The app numbers `arm_id` itself, and possible overlaps between trials are flagged in `notes` ("POSSIBLE OVERLAP:") for review.
 
 **Test on your computer first:**
 
@@ -100,15 +97,15 @@ python3.11 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
-Then put `AGENT_BACKEND=copilot`, `COPILOT_CONNECTION_STRING`, `COPILOT_TENANT_ID` and `COPILOT_CLIENT_ID` in `~/.Renviron`, restart R, and run the app. The first "Run the agent" opens a Microsoft sign-in page. Try 2–3 DOIs first, then compare 1 and 10 papers per message on the same DOIs to check that batching doesn't lower quality.
+Then put `AGENT_BACKEND=copilot`, `COPILOT_CONNECTION_STRING`, `COPILOT_TENANT_ID` and `COPILOT_CLIENT_ID` in `~/.Renviron`, restart R, and run the app. The first run opens a Microsoft sign-in page. Click **Test the agent on 10 papers** first and check the results against the papers before a full run.
 
 **On Posit Connect:** Connect builds the Python environment from `requirements.txt` (the version is recorded in `manifest.json`). Set `AGENT_BACKEND=copilot` and `COPILOT_CONNECTION_STRING` under **Vars**. Connect must have Python 3.10 or later.
 
-**Token lifetime:** the sign-in token is taken when the run starts and usually lasts about an hour. For long runs, split the DOI list into batches.
+**Token lifetime:** the sign-in token is taken when the run starts and usually lasts about an hour. For long runs, split the paper list into batches.
 
 ## Plugging in another agent
 
-The app only calls the agent through `agent_process_batch()` in `R/agent.R`. The Copilot Studio agent gets each batch in one message; the mock and `http` agents are called once per paper. The agent receives the paper (`nct_id`, `pmid`, `doi`, `access_type`, `citation`), the template's column names per sheet, the codebook text, and the instructions from `defaults/`. It returns rows per sheet, for example:
+The app only calls the agent through `agent_process_batch()` in `R/agent.R`. The Copilot Studio agent gets each batch in one message; the mock and `http` agents are called once per paper. The agent receives the paper (`nct_id`, `pmid`, `pmcid`, `doi`, `access_type`, `citation`), the template's column names per sheet, the codebook text, and the rules (from `defaults/`, or the file uploaded in step 2). It returns rows per sheet, for example:
 
 ```json
 {"included_arms": [{"arm_label": "Arm A", "arm_sample_size": 120}],
@@ -123,6 +120,6 @@ The rest of the app doesn't change.
 
 ## Notes
 
-- After editing `build_agent/output_template.xlsx`, `agent_instructions.txt` or `exclusion_rules.txt`, copy them into `app/defaults/` again.
+- The rules the app sends to the agent are `defaults/collection_rules.txt` and `defaults/exclusion_rules.txt`. They're adapted from the first agent's instructions (`build_agent/version1/`) for batch processing; edit them here. The default template is `defaults/output_template.xlsx`.
 - Long steps run in a background R process, so one user's run doesn't block others. The app keeps two background workers; raise `workers` in `app.R` if several people run it at once.
-- A very broad search (e.g. just "cancer") stops early if it matches more trials than the limit under **More filters**.
+- A very broad search (e.g. just "cancer") shows a warning in the progress log if it matches more trials than the number under **More filters**; the search still runs.

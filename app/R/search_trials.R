@@ -1,9 +1,11 @@
 # Step 1 of the app: find trials on ClinicalTrials.gov and link each one to its
-# results publication (DOI). Same logic as
-# scripts/data_collection_scripts/01_pull_ctgov_candidates.R and
-# 01b_link_nct_to_pubmed.R, turned into functions that take the user's inputs.
+# results publication by PubMed ID, then look the papers up in Europe PMC (DOI,
+# PubMed Central ID, open access). Trial search and filters follow
+# scripts/data_collection_scripts/01_pull_ctgov_candidates.R.
 
 CTGOV_URL <- "https://clinicaltrials.gov/api/v2/studies"
+# Columns of the paper list, in order (also what the agent gets for each paper)
+PAPER_COLUMNS <- c("nct_id", "pmid", "pmcid", "doi", "access_type", "citation")
 EUROPEPMC_URL <- "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
 
 PHASE_CHOICES <- c(
@@ -14,6 +16,10 @@ STATUS_CHOICES <- c(
   "Completed" = "COMPLETED", "Terminated" = "TERMINATED",
   "Active, not recruiting" = "ACTIVE_NOT_RECRUITING", "Recruiting" = "RECRUITING",
   "Suspended" = "SUSPENDED", "Withdrawn" = "WITHDRAWN", "Unknown" = "UNKNOWN"
+)
+ACCESS_KEEP_CHOICES <- c(
+  "Open access (the AI agent can read these)" = "open",
+  "All linked papers" = "all"
 )
 INTERVENTION_CHOICES <- c(
   "Drug" = "DRUG", "Biological" = "BIOLOGICAL", "Combination product" = "COMBINATION_PRODUCT",
@@ -34,8 +40,8 @@ ctgov_get <- function(query) {
 }
 
 #' Fetch every study matching the search, following nextPageToken. Phase is
-#' filtered on the server so the pull stays small. Stops if the search matches
-#' more than max_studies trials, so a too-broad search fails fast.
+#' filtered on the server so the pull stays small. Warns if the search matches
+#' more than max_studies trials, so the user knows a broad search will be slow.
 fetch_studies <- function(condition, statuses, phases, max_studies, progress) {
   advanced <- "AREA[StudyType]INTERVENTIONAL"
   if (length(phases) > 0) {
@@ -58,14 +64,14 @@ fetch_studies <- function(condition, statuses, phases, max_studies, progress) {
       total <- page$totalCount %||% NA_integer_
       progress(0.02, sprintf("ClinicalTrials.gov: %s trials match the search", format(total, big.mark = ",")))
       if (!is.na(total) && total > max_studies) {
-        stop(sprintf(
-          "The search matches %s trials, more than the limit of %s. Narrow the disease term or filters, or raise the limit.",
+        progress(0.02, sprintf(
+          "Warning: the search matches %s trials, more than %s. This may take a long time; narrow the disease term or filters to speed it up.",
           format(total, big.mark = ","), format(max_studies, big.mark = ",")
         ))
       }
     }
     studies <- c(studies, page$studies)
-    progress(0.02 + 0.13 * length(studies) / max(total, 1), sprintf("Downloaded %d trial records", length(studies)))
+    progress(0.02 + 0.13 * length(studies) / max(total, 1), sprintf("Downloaded %d/%d trial records", length(studies), total))
     query$countTotal <- NULL
     query$pageToken <- page$nextPageToken
     if (is.null(query$pageToken) || length(page$studies) == 0) break
@@ -73,7 +79,7 @@ fetch_studies <- function(condition, statuses, phases, max_studies, progress) {
   studies
 }
 
-#' One row per study with the fields used for filtering and the DOI list.
+#' One row per study with the fields used for filtering and the paper list.
 extract_study_row <- function(study) {
   ps <- study$protocolSection
   collapse <- function(x) if (length(x) > 0) paste(unlist(x), collapse = "; ") else NA_character_
@@ -126,81 +132,101 @@ doi_from_citation <- function(citation) {
   sub("[.,;:)]+$", "", m)
 }
 
-#' Look up DOIs for many PMIDs at once (PubMed esummary, 200 per request).
-#' Returns a named character vector: PMID -> DOI (NA when PubMed has none).
-fetch_dois_for_pmids <- function(pmids, progress) {
-  pmids <- unique(pmids[!is.na(pmids)])
-  out <- setNames(rep(NA_character_, length(pmids)), pmids)
-  if (length(pmids) == 0) return(out)
-
-  key <- Sys.getenv("NCBI_API_KEY")
-  if (nzchar(key)) rentrez::set_entrez_key(key)
-  delay <- if (nzchar(key)) 0.11 else 0.35
-
-  batches <- split(pmids, ceiling(seq_along(pmids) / 200))
-  for (i in seq_along(batches)) {
-    ids <- batches[[i]]
-    summ <- tryCatch(rentrez::entrez_summary(db = "pubmed", id = ids, always_return_list = TRUE),
-                     error = function(e) NULL)
-    if (!is.null(summ)) {
-      for (s in summ) {
-        ai <- s$articleids
-        if (!is.null(ai) && !is.null(s$uid)) {
-          doi <- ai$value[ai$idtype == "doi"]
-          if (length(doi) > 0) out[[s$uid]] <- doi[1]
-        }
-      }
-    }
-    progress(0.20 + 0.45 * i / length(batches), sprintf("PubMed DOI lookup: batch %d of %d", i, length(batches)))
-    Sys.sleep(delay)
+#' Link a trial to its paper: the first RESULT/DERIVED reference with a PubMed
+#' ID. If no reference has one, the first reference whose citation text holds
+#' a DOI.
+link_trial <- function(nct_id, refs) {
+  found <- function(r, pmid, doi) {
+    tibble::tibble(nct_id = nct_id, publication_found = TRUE, ref_type = r$type,
+                   pmid = pmid, doi = doi, citation = r$citation %||% NA_character_)
   }
-  out
-}
-
-#' Pick the first RESULT/DERIVED reference that yields a DOI (from PubMed via
-#' its PMID, else from its citation text).
-link_trial <- function(nct_id, refs, pmid_dois) {
   for (r in refs) {
     pmid <- r$pmid %||% NA_character_
-    citation <- r$citation %||% NA_character_
-    doi <- if (!is.na(pmid) && pmid %in% names(pmid_dois)) pmid_dois[[pmid]] else NA_character_
-    if (is.na(doi)) doi <- doi_from_citation(citation)
-    if (!is.na(doi)) {
-      return(tibble::tibble(nct_id = nct_id, publication_found = TRUE, ref_type = r$type,
-                            pmid = pmid, doi = doi, citation = citation))
-    }
+    if (!is.na(pmid) && nzchar(pmid)) return(found(r, pmid, NA_character_))
+  }
+  for (r in refs) {
+    doi <- doi_from_citation(r$citation %||% NA_character_)
+    if (!is.na(doi)) return(found(r, NA_character_, doi))
   }
   tibble::tibble(nct_id = nct_id, publication_found = FALSE, ref_type = NA_character_,
                  pmid = NA_character_, doi = NA_character_, citation = NA_character_)
 }
 
-#' Classify access with Europe PMC: open_access / free_access / paywalled /
-#' not_in_europepmc / lookup_failed. Same rules as 02_access_and_screen_europepmc.R.
-classify_access <- function(doi) {
-  rec <- tryCatch({
-    resp <- httr::GET(EUROPEPMC_URL, query = list(
-      query = sprintf('DOI:"%s"', doi), resultType = "core", format = "json"))
-    httr::stop_for_status(resp)
-    jsonlite::fromJSON(httr::content(resp, "text", encoding = "UTF-8"),
-                       simplifyVector = FALSE)$resultList$result
-  }, error = function(e) e)
-  if (inherits(rec, "error")) return("lookup_failed")
-  if (length(rec) == 0) return("not_in_europepmc")
-  rec <- rec[[1]]
-  urls <- rec$fullTextUrlList$fullTextUrl %||% list()
-  codes <- vapply(urls, function(u) u$availabilityCode %||% NA_character_, character(1))
-  if (identical(rec$isOpenAccess, "Y")) "open_access"
-  else if (any(codes %in% c("OA", "F")) || identical(rec$inEPMC, "Y")) "free_access"
-  else "paywalled"
+#' Look papers up in Europe PMC, up to 100 per request.
+#' Returns a data frame with one row per paper: `access_type` (open_access =
+#' open in Europe PMC with a PMCID /
+#' not_open_access / not_in_europepmc / lookup_failed), `pmcid` (the PubMed
+#' Central ID, which leads straight to the full text) and `doi` (NA if none).
+#' Papers are matched by PMID, else DOI, else PMCID.
+classify_access <- function(papers, progress = function(...) NULL, chunk_size = 100) {
+  out <- rep(NA_character_, nrow(papers))
+  pmcid_out <- rep(NA_character_, nrow(papers))
+  doi_out <- rep(NA_character_, nrow(papers))
+  pmid <- trimws(as.character(papers$pmid))
+  doi <- tolower(trimws(as.character(papers$doi)))
+  pmcid <- toupper(trimws(as.character(papers$pmcid %||% rep(NA, nrow(papers)))))
+  by_pmid <- !is.na(pmid) & grepl("^[0-9]+$", pmid)
+  by_doi <- !by_pmid & !is.na(doi) & nzchar(doi)
+  by_pmcid <- !by_pmid & !by_doi & !is.na(pmcid) & grepl("^PMC[0-9]+$", pmcid)
+  out[!by_pmid & !by_doi & !by_pmcid] <- "not_in_europepmc"
+
+  # One request: returns the Europe PMC records, or NULL if it failed twice
+  query_epmc <- function(q) {
+    for (attempt in 1:2) {
+      res <- tryCatch({
+        resp <- httr::GET(EUROPEPMC_URL, query = list(
+          query = q, resultType = "lite", format = "json", pageSize = 1000))
+        httr::stop_for_status(resp)
+        jsonlite::fromJSON(httr::content(resp, "text", encoding = "UTF-8"),
+                           simplifyVector = FALSE)$resultList$result
+      }, error = function(e) NULL)
+      if (!is.null(res)) return(res)
+      Sys.sleep(2)
+    }
+    NULL
+  }
+  # Open access = the agent can read it: open in Europe PMC and has a PMCID
+  label <- function(rec) {
+    if (identical(rec$isOpenAccess, "Y") && !is.null(rec$pmcid) && nzchar(rec$pmcid)) "open_access"
+    else "not_open_access"
+  }
+
+  chunks <- function(rows) split(which(rows), ceiling(seq_len(sum(rows)) / chunk_size))
+  jobs <- c(
+    lapply(chunks(by_pmid), function(idx) list(idx = idx, key = "pmid", ids = pmid[idx],
+      q = sprintf("(%s) AND SRC:MED", paste0("EXT_ID:", pmid[idx], collapse = " OR ")))),
+    lapply(chunks(by_doi), function(idx) list(idx = idx, key = "doi", ids = doi[idx],
+      q = paste0('DOI:"', doi[idx], '"', collapse = " OR "))),
+    lapply(chunks(by_pmcid), function(idx) list(idx = idx, key = "pmcid", ids = tolower(pmcid[idx]),
+      q = paste0("PMCID:", pmcid[idx], collapse = " OR ")))
+  )
+  for (j in seq_along(jobs)) {
+    job <- jobs[[j]]
+    recs <- query_epmc(job$q)
+    if (is.null(recs)) {
+      out[job$idx] <- "lookup_failed"
+    } else {
+      keys <- vapply(recs, function(r) tolower(r[[job$key]] %||% NA_character_), character(1))
+      labels <- vapply(recs, label, character(1))
+      pmcids <- vapply(recs, function(r) r$pmcid %||% NA_character_, character(1))
+      rec_dois <- vapply(recs, function(r) r$doi %||% NA_character_, character(1))
+      found <- match(job$ids, keys)
+      out[job$idx] <- ifelse(is.na(found), "not_in_europepmc", labels[found])
+      pmcid_out[job$idx] <- pmcids[found]
+      doi_out[job$idx] <- rec_dois[found]
+    }
+    progress(j / length(jobs), sprintf("Europe PMC lookup: request %d of %d", j, length(jobs)))
+  }
+  data.frame(access_type = out, pmcid = pmcid_out, doi = doi_out)
 }
 
 #' Full Step 1 run. Returns a list with:
-#'   dois    - one row per publication, columns as in build_agent/input_dois.xlsx
+#'   papers    - one row per linked paper, columns PAPER_COLUMNS
 #'   trials  - every candidate trial with its linkage result
 #'   counts  - numbers for the flow summary
 search_trials <- function(condition, statuses, phases, intervention_types, purposes,
-                          require_enrollment = TRUE, check_access = TRUE,
-                          max_studies = 5000, progress = function(...) NULL) {
+                          require_enrollment = TRUE, max_studies = 5000,
+                          progress = function(...) NULL) {
   progress(0, sprintf("Searching ClinicalTrials.gov for \"%s\"", condition))
   raw <- fetch_studies(condition, statuses, phases, max_studies, progress)
   if (length(raw) == 0) stop("No trials match this search.")
@@ -212,53 +238,59 @@ search_trials <- function(condition, statuses, phases, intervention_types, purpo
   progress(0.18, sprintf("%d of %d trials meet the inclusion criteria", nrow(candidates), nrow(studies_df)))
 
   refs <- lapply(raw_kept, usable_references)
-  all_pmids <- unlist(lapply(refs, function(rs) vapply(rs, function(r) r$pmid %||% NA_character_, character(1))))
-  pmid_dois <- fetch_dois_for_pmids(all_pmids, progress)
+  links <- purrr::map2_dfr(candidates$nct_id, refs, link_trial)
 
-  links <- purrr::map2_dfr(candidates$nct_id, refs, link_trial, pmid_dois = pmid_dois)
-
-  # Several trials can report in the same paper; keep the lowest NCT ID per DOI.
+  # Several trials can report in the same paper; keep the lowest NCT ID per
+  # paper (by PubMed ID, or DOI when there's no PubMed ID).
   links <- links[order(links$nct_id), ]
-  dup <- !is.na(links$doi) & duplicated(tolower(links$doi))
-  links$duplicate_doi <- dup
+  paper_key <- ifelse(!is.na(links$pmid), paste0("pmid:", links$pmid), paste0("doi:", tolower(links$doi)))
+  dup <- links$publication_found & duplicated(paper_key)
+  links$duplicate_paper <- dup
+  progress(0.25, sprintf("%d trials link to a paper (%d papers after removing shared ones)",
+                         sum(links$publication_found), sum(links$publication_found & !dup)))
 
   trials <- dplyr::left_join(candidates, links, by = "nct_id")
-  dois <- trials[trials$publication_found & !trials$duplicate_doi,
+  papers <- trials[trials$publication_found & !trials$duplicate_paper,
                  c("nct_id", "pmid", "doi", "citation")]
 
-  dois$access_type <- NA_character_
-  if (check_access && nrow(dois) > 0) {
-    for (i in seq_len(nrow(dois))) {
-      dois$access_type[i] <- classify_access(dois$doi[i])
-      if (i %% 10 == 0 || i == nrow(dois)) {
-        progress(0.70 + 0.28 * i / nrow(dois), sprintf("Europe PMC access check: %d of %d", i, nrow(dois)))
-      }
-      Sys.sleep(0.15)
-    }
+  papers$access_type <- NA_character_
+  papers$pmcid <- NA_character_
+  if (nrow(papers) > 0) {
+    epmc <- classify_access(papers, function(f, msg) progress(0.25 + 0.73 * f, msg))
+    papers$access_type <- epmc$access_type
+    papers$pmcid <- epmc$pmcid
+    papers$doi <- ifelse(is.na(papers$doi), epmc$doi, papers$doi)
   }
-  dois <- dois[, c("nct_id", "pmid", "doi", "access_type", "citation")]
+  papers <- papers[, PAPER_COLUMNS]
 
   counts <- list(
     matched = nrow(studies_df),
     candidates = nrow(candidates),
     no_publication = sum(!links$publication_found),
-    duplicate_doi = sum(dup),
-    dois = nrow(dois),
-    access_checked = check_access,
-    open_access = sum(dois$access_type %in% "open_access"),
-    free_access = sum(dois$access_type %in% "free_access"),
-    access_failed = sum(dois$access_type %in% "lookup_failed")
+    duplicate_paper = sum(dup),
+    papers = nrow(papers),
+    open_access = sum(papers$access_type %in% "open_access"),
+    access_failed = sum(papers$access_type %in% "lookup_failed")
   )
-  progress(1, sprintf("Done: %d publications with a DOI", nrow(dois)))
-  list(dois = dois, trials = trials, counts = counts)
+  progress(1, sprintf("Done: %d linked papers, %d open access", counts$papers, counts$open_access))
+  list(papers = papers, trials = trials, counts = counts)
 }
 
-#' Write the DOI workbook. Sheet 1 matches the agent's input format.
-write_doi_workbook <- function(result, settings, path) {
+#' Keep papers by access type: "open" keeps open-access papers, "all" keeps all.
+keep_by_access <- function(papers, keep = "all") {
+  if (keep == "all") return(papers)
+  papers[papers$access_type %in% "open_access", , drop = FALSE]
+}
+
+#' Excel file: the kept papers, every linked paper, every candidate trial,
+#' and the search settings.
+write_paper_workbook <- function(result, settings, path, kept = result$papers) {
   trials <- result$trials
-  trials$included_in_doi_list <- trials$publication_found & !trials$duplicate_doi
+  trials$included_in_paper_list <- trials$publication_found & !trials$duplicate_paper &
+    trials$nct_id %in% kept$nct_id
   writexl::write_xlsx(list(
-    input_dois = result$dois,
+    input_papers = kept,
+    all_linked_papers = result$papers,
     all_candidate_trials = trials,
     search_settings = settings
   ), path)

@@ -1,14 +1,14 @@
-# Write the data files in build_agent/ (the files for building the DOI -> dataset
+# Write the data files in build_agent/version1/ (the files for building the DOI -> dataset
 # AI agent) from the Step 2 and Step 3 outputs. The .md instruction files in
-# build_agent/ are written by hand; this script only makes the data files.
+# build_agent/version1/ are written by hand; this script only makes the data files.
 #
 # Input:  data/raw/step2_nct_publication_links_with_doi.csv
 #         data/raw/step3_stratum_arm_variables.xlsx
-# Output: build_agent/input_dois.csv            12 toy trials for the agent to read
-#         build_agent/input_dois.xlsx           same list as Excel, for tools that can't upload CSV
-#         build_agent/output_template.xlsx      empty sheets the agent fills, plus
+# Output: build_agent/version1/input_dois.csv            12 toy trials for the agent to read
+#         build_agent/version1/input_dois.xlsx           same list as Excel, for tools that can't upload CSV
+#         build_agent/version1/output_template.xlsx      empty sheets the agent fills, plus
 #                                               the codebook of the columns it fills
-#         build_agent/testing/expected_decisions.csv
+#         build_agent/version1/testing/expected_decisions.csv
 #                                               reviewed include / exclude
 #                                               decisions, to test the agent
 
@@ -20,7 +20,7 @@ suppressMessages({
 
 LINKS_IN <- "data/raw/step2_nct_publication_links_with_doi.csv"
 STEP3_IN <- "data/raw/step3_stratum_arm_variables.xlsx"
-OUT_DIR <- "build_agent"
+OUT_DIR <- "build_agent/version1"
 dir.create(file.path(OUT_DIR, "testing"), recursive = TRUE, showWarnings = FALSE)
 
 ## ---- Input DOIs: a 12-trial toy set from the trials that passed Step 2 --------

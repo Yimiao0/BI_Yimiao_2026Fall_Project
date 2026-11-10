@@ -1,6 +1,6 @@
 # Exclusion rules
 
-The analysis population is **systemic therapy for advanced or metastatic NSCLC**. Exclude a paper or arm when its ORR or PFS can't fairly be compared with that population. Apply only the rules switched on in the settings of `agent_instructions.txt`.
+The analysis population is **systemic therapy for advanced or metastatic NSCLC**. Exclude a paper or arm when its ORR or PFS can't fairly be compared with that population.
 
 Use exactly one code. If more than one applies, use the lowest number:
 
@@ -17,11 +17,11 @@ Out of scope (paper- or arm-level):
 6. `DEFINITIVE_CRT`: curative-intent chest radiation with chemotherapy
 7. `INTRACRANIAL_ORR`: ORR counts brain lesions only
 8. `ON_TREATMENT_SUBGROUP`: strata defined by an event during treatment
-9. `OVERLAP`: patients already counted in another included arm
+9. `OVERLAP`: patients already counted in another included arm (in this app: flag only, see rule 9)
 
 A paper you couldn't get or read is not excluded; it goes to the `failed_papers` sheet.
 
-For each excluded paper or arm, write one row to the `excluded` sheet of `output_template.xlsx`, filling its columns as defined in that file's `codebook` sheet.
+For each excluded paper or arm, write one row to the `excluded` sheet, filling its columns as the codebook defines them.
 
 Decide from the arm's planned treatment and population, not from words that appear in the paper.
 
@@ -67,7 +67,7 @@ A trial registered as NSCLC can have a paper that reports only another cancer. E
 
 ## 9. OVERLAP
 
-**Exclude** a subgroup, regional extension or later trial phase whose parent trial is already in the `included_arms` sheet (search it by NCT number or trial name):
+Papers are processed in separate batches, so you can't see which arms are already included. Don't exclude with this code. Instead, when a paper is any of the following, include its arms and start `notes` with "POSSIBLE OVERLAP: <parent trial name or NCT number>". A reviewer decides later.
 - Regional subgroup of a global trial
 - Regional extension study of a global trial
-- Later phase of included arms, such as the maintenance phase of a trial whose first-line arms are included
+- Later phase of another trial's arms, such as the maintenance phase of a trial whose first-line arms are reported elsewhere

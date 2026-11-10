@@ -1,8 +1,8 @@
 # Trial publication finder and data collection app.
 #
 # Tab 1: search ClinicalTrials.gov, link trials to their results papers, and
-#        download the DOI list as Excel.
-# Tab 2: send the DOI list, an output template and a codebook to the
+#        download the paper list as Excel.
+# Tab 2: send the paper list, an output template and a codebook to the
 #        data-collection agent and download the filled-in template.
 #
 # Functions live in R/ (loaded automatically by Shiny). Long steps run in a
@@ -17,7 +17,7 @@ future::plan(future::multisession, workers = 2)
 APP_DIR <- normalizePath(".")
 options(app_dir = APP_DIR)
 DEFAULT_TEMPLATE <- file.path(APP_DIR, "defaults", "output_template.xlsx")
-DEFAULT_INSTRUCTIONS <- file.path(APP_DIR, "defaults", c("agent_instructions.txt", "exclusion_rules.txt"))
+DEFAULT_INSTRUCTIONS <- file.path(APP_DIR, "defaults", c("collection_rules.txt", "exclusion_rules.txt"))
 
 # Run inside the background process: load the app's functions there too.
 load_app_functions <- function(app_dir) {
@@ -25,8 +25,10 @@ load_app_functions <- function(app_dir) {
   for (f in list.files(file.path(app_dir, "R"), pattern = "\\.R$", full.names = TRUE)) source(f, local = FALSE)
 }
 
-read_instructions <- function() {
-  files <- DEFAULT_INSTRUCTIONS[file.exists(DEFAULT_INSTRUCTIONS)]
+# The rules sent to the agent with every batch: the default NSCLC rule files,
+# or one uploaded .txt/.md file that replaces them.
+read_instructions <- function(path = NULL) {
+  files <- if (is.null(path)) DEFAULT_INSTRUCTIONS[file.exists(DEFAULT_INSTRUCTIONS)] else path
   paste(vapply(files, function(f) paste(readLines(f, warn = FALSE), collapse = "\n"), character(1)),
         collapse = "\n\n")
 }
@@ -51,9 +53,9 @@ progress_card <- function(id) {
 # Card for a results table. It's never squeezed by the cards above it: it is
 # at least 500px tall and grows to fit the 10 rows on a page (rows with long
 # citations wrap onto two lines). The page scrolls when the window is small.
-table_card <- function(header, output) {
+table_card <- function(header, ...) {
   card(fill = FALSE, full_screen = TRUE, header,
-       card_body(fillable = FALSE, style = "min-height: 500px;", output))
+       card_body(fillable = FALSE, style = "min-height: 500px;", ...))
 }
 
 search_tab <- nav_panel(
@@ -74,8 +76,7 @@ search_tab <- nav_panel(
                              selected = c("DRUG", "BIOLOGICAL", "COMBINATION_PRODUCT")),
           checkboxGroupInput("purposes", "Primary purpose", PURPOSE_CHOICES, selected = "TREATMENT"),
           checkboxInput("require_enrollment", "Enrollment must be reported", TRUE),
-          checkboxInput("check_access", "Check open access in Europe PMC (adds ~0.2 s per paper)", TRUE),
-          numericInput("max_studies", "Stop if the search matches more than this many trials", 5000, min = 100, step = 500)
+          numericInput("max_studies", "Warn if the search matches more than this many trials", 5000, min = 100, step = 500)
         )
       ),
       input_task_button("search", "Search", icon = icon("magnifying-glass"))
@@ -85,8 +86,13 @@ search_tab <- nav_panel(
     progress_card("search"),
     table_card(
       card_header(class = "d-flex justify-content-between align-items-center",
-                  "Publications found", uiOutput("doi_download_ui", inline = TRUE)),
-      DT::DTOutput("doi_table")
+                  "Publications found", uiOutput("paper_download_ui", inline = TRUE)),
+      # Gap between the two options set inline on the first label
+      radioButtons("access_keep", NULL, inline = TRUE, selected = "open",
+                   choiceNames = list(span(style = "margin-right: 3rem;", names(ACCESS_KEEP_CHOICES)[1]),
+                                      names(ACCESS_KEEP_CHOICES)[2]),
+                   choiceValues = unname(ACCESS_KEEP_CHOICES)),
+      DT::DTOutput("paper_table")
     )
   )
 )
@@ -96,11 +102,11 @@ collect_tab <- nav_panel(
   layout_sidebar(
     sidebar = sidebar(
       width = 340,
-      radioButtons("doi_source", "DOI list", c("From step 1" = "step1", "Upload a file" = "upload")),
-      conditionalPanel("input.doi_source == 'upload'",
-        fileInput("doi_file", NULL, accept = ".xlsx", placeholder = "DOI list (.xlsx)"),
-        helpText("Needs a 'doi' column; 'nct_id', 'pmid', 'access_type' and 'citation' are used if present.")
-      ),
+      radioButtons("paper_source", "Paper list", c("From step 1" = "step1", "Upload a file" = "upload")),
+      conditionalPanel("input.paper_source == 'upload'",
+        fileInput("paper_file", NULL, accept = ".xlsx", placeholder = "Paper list (.xlsx)"),
+        helpText("Needs a 'pmid', 'doi' or 'pmcid' column; 'nct_id', 'access_type' and 'citation' are used if present.")),
+      helpText("Only open-access papers are sent to the agent."),
       radioButtons("template_source", "Output template", c("Default template" = "default", "Upload a template" = "upload")),
       conditionalPanel("input.template_source == 'upload'",
         fileInput("template_file", NULL, accept = ".xlsx", placeholder = "Empty template (.xlsx)"),
@@ -111,8 +117,14 @@ collect_tab <- nav_panel(
       conditionalPanel("input.codebook_source == 'upload'",
         fileInput("codebook_file", NULL, accept = c(".xlsx", ".csv", ".txt", ".md"), placeholder = "Codebook (.xlsx, .csv, .txt)")
       ),
-      numericInput("batch_size", "Papers per message to the agent", 10, min = 1, max = 20, step = 1),
-      helpText("Fewer round trips with more papers per message. If a message fails, its papers are retried one by one."),
+      radioButtons("rules_source", "Rules", c("Default rules (NSCLC)" = "default", "Upload rules" = "upload")),
+      conditionalPanel("input.rules_source == 'upload'",
+        fileInput("rules_file", NULL, accept = c(".txt", ".md"), placeholder = "Rules (.txt, .md)"),
+        helpText("The collection and exclusion rules for your disease and template. They replace the default rules.")
+      ),
+      downloadLink("default_rules_dl", "Download the default rules", class = "d-block mb-3"),
+      input_task_button("test_agent", "Test the agent on 10 papers", icon = icon("vial"),
+                        class = "btn-outline-primary mb-2"),
       input_task_button("collect", "Run the agent", icon = icon("robot")),
       uiOutput("backend_note")
     ),
@@ -133,20 +145,30 @@ help_tab <- nav_panel(
     markdown("
 **1. Find publications.** The app searches ClinicalTrials.gov for interventional trials
 that match your disease, phase and status, then keeps trials that pass all the filters.
-For each trial it takes the results papers the trial record links to (sponsor-marked
-*RESULT* references first, then *DERIVED* ones linked by the National Library of Medicine)
-and looks up the DOI in PubMed. When several trials link to the same paper, only the
+Each trial is linked to the first results paper in its record that has a PubMed ID
+(sponsor-marked *RESULT* references first, then *DERIVED* ones linked by the National Library
+of Medicine). The app then looks each paper up in Europe PMC for its DOI, its PubMed Central
+ID (PMCID) and whether it's open access. When several trials link to the same paper, only the
 lowest NCT ID keeps it.
 
-The Excel download has three sheets:
-- `input_dois`: one row per paper, in the format the data-collection agent reads.
+**The filter above the publications table:** *Open access* keeps only papers whose full text Europe PMC
+provides openly, with a PubMed Central ID, so the AI agent can read them. *All linked papers* also keeps papers that
+aren't open access (free only on the journal site, or paywalled).
+
+The Excel download has four sheets:
+- `input_papers`: the listed papers, in the format the data-collection agent reads.
+- `all_linked_papers`: every linked paper, whatever its access.
 - `all_candidate_trials`: every trial that passed the filters, including those with no paper.
 - `search_settings`: the inputs used, so the search can be repeated.
 
-Review the DOI list before step 2. You can delete rows and upload the edited file there.
+Review the paper list before step 2. You can delete rows and upload the edited file there.
 
-**2. Collect data.** The agent reads each paper and fills the template, one sheet per
+**2. Collect data.** Only open-access papers are sent to the agent, whichever paper list
+you use; the others are skipped and counted in the progress log. The agent reads each paper and fills the template, one sheet per
 template sheet (for the default template: `included_arms`, `excluded`, `failed_papers`).
+The agent also gets the collection and exclusion rules with every batch. The default
+rules are for NSCLC; for another disease or template, download them, adapt them and upload
+your own under *Rules*.
 Every value should be checked against the paper, starting with rows whose `notes`
 begin with a flag such as `CHECK:`.
 ")
@@ -232,7 +254,6 @@ server <- function(input, output, session) {
       intervention_types = input$intervention_types,
       purposes = input$purposes,
       require_enrollment = input$require_enrollment,
-      check_access = input$check_access,
       max_studies = input$max_studies
     )
     search_params(params)
@@ -264,40 +285,44 @@ server <- function(input, output, session) {
     # Short boxes: small icon beside the title instead of a large one above it
     box <- function(title, value, icon_name, ...) {
       value_box(span(style = "white-space: nowrap;", icon(icon_name), title), value, ...,
-                fill = FALSE, height = "120px", class = "summary-box")
+                fill = FALSE, height = "145px", class = "summary-box")
     }
     boxes <- list(
-      box("Matching trials", n$matched, "flask"),
-      box("Pass all filters", n$candidates, "filter"),
-      box("Papers with a DOI", n$dois, "file-lines")
+      box("Trials found", n$candidates, "flask"),
+      box("Linked papers", n$papers, "file-lines")
     )
-    # Only shown when the Europe PMC access check was run
-    if (isTRUE(n$access_checked)) {
-      note <- sprintf("+ %d free to read", n$free_access)
-      if (n$access_failed > 0) note <- paste0(note, sprintf(", %d not checked", n$access_failed))
-      boxes[[length(boxes) + 1]] <- box("Open access", n$open_access, "lock-open",
-                        p(class = "mb-0", style = "font-size: 0.75rem;", note))
+    note <- if (n$access_failed > 0) {
+      p(class = "mb-0", style = "font-size: 0.75rem;", sprintf("%d papers couldn't be checked", n$access_failed))
     }
+    boxes[[length(boxes) + 1]] <- box("Open access", n$open_access, "lock-open", note)
     do.call(layout_column_wrap, c(list(width = 1 / length(boxes), fill = FALSE), boxes))
   })
 
-  output$doi_table <- DT::renderDT({
-    d <- search_result()$dois
-    d$doi <- sprintf('<a href="https://doi.org/%s" target="_blank">%s</a>', d$doi, d$doi)
+  # Papers kept for the list, download and step 2, by access type
+  kept_papers <- reactive({
+    keep_by_access(search_result()$papers, input$access_keep)
+  })
+
+  output$paper_table <- DT::renderDT({
+    d <- kept_papers()
+    d$doi <- ifelse(is.na(d$doi), "", sprintf('<a href="https://doi.org/%s" target="_blank">%s</a>', d$doi, d$doi))
     DT::datatable(d, escape = setdiff(names(d), "doi"), rownames = FALSE,
                   options = list(pageLength = 10, scrollX = TRUE,
-                                 columnDefs = list(list(targets = 4, render = DT::JS(
+                                 columnDefs = list(list(targets = which(names(d) == "citation") - 1, render = DT::JS(
                                    "function(d,t){return t==='display'&&d&&d.length>80?d.substr(0,80)+'…':d;}")))))
   })
 
-  output$doi_download_ui <- renderUI({
+  output$paper_download_ui <- renderUI({
     req(search_result())
-    downloadButton("doi_download", "Download DOIs (.xlsx)", class = "btn-sm btn-primary")
+    downloadButton("paper_download", "Download papers (.xlsx)", class = "btn-sm btn-primary")
   })
 
-  output$doi_download <- downloadHandler(
-    filename = function() sprintf("dois_%s.xlsx", format(Sys.Date())),
-    content = function(file) write_doi_workbook(search_result(), search_settings(), file)
+  output$paper_download <- downloadHandler(
+    filename = function() {
+      which <- if (identical(input$access_keep, "open")) "open_access" else "all_papers"
+      sprintf("papers_%s_%s.xlsx", which, format(Sys.Date()))
+    },
+    content = function(file) write_paper_workbook(search_result(), search_settings(), file, kept_papers())
   )
 
   ## Step 2: collect ------------------------------------------------------
@@ -305,6 +330,10 @@ server <- function(input, output, session) {
   output$default_template_dl <- downloadHandler(
     filename = "output_template.xlsx",
     content = function(file) file.copy(DEFAULT_TEMPLATE, file)
+  )
+  output$default_rules_dl <- downloadHandler(
+    filename = "default_rules_NSCLC.md",
+    content = function(file) writeLines(read_instructions(), file)
   )
 
   output$backend_note <- renderUI({
@@ -326,22 +355,23 @@ server <- function(input, output, session) {
   collect_task <- ExtendedTask$new(function(args, progress_path) {
     future_promise({
       load_app_functions(args$app_dir)
-      run_agent(args$dois, args$template_path, args$codebook_path, args$instructions,
+      run_agent(args$papers, args$template_path, args$codebook_path, args$instructions,
                 progress = progress_writer(progress_path), token = args$token,
-                batch_size = args$batch_size)
+                max_papers = args$max_papers)
     }, seed = TRUE)
-  }) |> bind_task_button("collect")
+  }) |> bind_task_button("collect") |> bind_task_button("test_agent")
 
-  observeEvent(input$collect, {
+  # Start a run: all papers ("Run the agent") or the first 10 ("Test the agent")
+  start_collect <- function(max_papers) {
     inputs <- tryCatch({
-      dois <- if (input$doi_source == "step1") {
-        if (search_task$status() != "success") stop("Run a search in step 1 first, or upload a DOI file.")
-        search_result()$dois
+      papers <- if (input$paper_source == "step1") {
+        if (search_task$status() != "success") stop("Run a search in step 1 first, or upload a paper list.")
+        kept_papers()
       } else {
-        if (is.null(input$doi_file)) stop("Upload a DOI file.")
-        read_doi_list(input$doi_file$datapath)
+        if (is.null(input$paper_file)) stop("Upload a paper list.")
+        read_paper_list(input$paper_file$datapath)
       }
-      if (nrow(dois) == 0) stop("The DOI list is empty.")
+      if (nrow(papers) == 0) stop("The paper list is empty.")
 
       template_path <- if (input$template_source == "default") DEFAULT_TEMPLATE else {
         if (is.null(input$template_file)) stop("Upload a template.")
@@ -355,6 +385,12 @@ server <- function(input, output, session) {
       } else NULL
       read_codebook(codebook_path, template_path)  # fail early if there is no codebook
 
+      rules <- if (input$rules_source == "upload") {
+        if (is.null(input$rules_file)) stop("Upload a rules file.")
+        read_instructions(input$rules_file$datapath)
+      } else read_instructions()
+      if (!nzchar(trimws(rules))) stop("The rules file is empty.")
+
       # Uploaded files are deleted when the session ends; copy them so the
       # background job can still read them.
       keep <- function(p) if (is.null(p)) NULL else {
@@ -364,10 +400,8 @@ server <- function(input, output, session) {
       # here, where the Shiny session is available.
       token <- if (Sys.getenv("AGENT_BACKEND", "mock") == "copilot") copilot_token(session, APP_DIR) else NULL
 
-      batch_size <- if (is.na(input$batch_size)) 10 else min(max(round(input$batch_size), 1), 20)
-
-      list(dois = dois, template_path = keep(template_path), codebook_path = keep(codebook_path),
-           token = token, batch_size = batch_size)
+      list(papers = papers, template_path = keep(template_path), codebook_path = keep(codebook_path),
+           token = token, max_papers = max_papers, instructions = rules)
     }, error = function(e) {
       showNotification(conditionMessage(e), type = "error", duration = 8)
       NULL
@@ -377,8 +411,10 @@ server <- function(input, output, session) {
     path <- tempfile("collect_progress_", fileext = ".txt")
     collect_progress_path(path)
     collect_template_path(inputs$template_path)
-    collect_task$invoke(c(inputs, list(app_dir = APP_DIR, instructions = read_instructions())), path)
-  })
+    collect_task$invoke(c(inputs, list(app_dir = APP_DIR)), path)
+  }
+  observeEvent(input$collect, start_collect(Inf))
+  observeEvent(input$test_agent, start_collect(10))
 
   watch_progress("collect", collect_progress_path, collect_task)
 
