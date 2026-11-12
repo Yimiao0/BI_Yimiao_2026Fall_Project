@@ -1,0 +1,206 @@
+Process these 3 papers, each on its own, following your instructions.
+
+Papers:
+1. nct_id: NCT02864251; pmid: 38252907; pmcid: PMC11095864; doi: 10.1200/jco.23.01017; access_type: open_access; citation: Mok T, Nakagawa K, Park K, Ohe Y, Girard N, Kim HR, Wu YL, Gainor J, Lee SH, Chiu CH, Kim SW, Yang CT, Wu CL, Wu L, Lin MC, Samol J, Ichikado K, Wang M, Zhang X, Sylvester J, Li S, Forslund A, Yang JC. Nivolumab Plus Chemotherapy in Epidermal Growth Factor Receptor-Mutated Metastatic Non-Small-Cell Lung Cancer After Disease Progression on Epidermal Growth Factor Receptor Tyrosine Kinase Inhibitors: Final Results of CheckMate 722. J Clin Oncol. 2024 Apr 10;42(11):1252-1264. doi: 10.1200/JCO.23.01017. Epub 2024 Jan 22.
+2. nct_id: NCT01366131; pmid: 29438092; pmcid: PMC6067939; doi: 10.1634/theoncologist.2017-0690; access_type: open_access; citation: von Pawel J, Spigel DR, Ervin T, Losonczy G, Barlesi F, Juhasz E, Anderson M, McCall B, Wakshull E, Hegde P, Ye W, Chen D, Chang I, Rhee I, Reck M. Randomized Phase II Trial of Parsatuzumab (Anti-EGFL7) or Placebo in Combination with Carboplatin, Paclitaxel, and Bevacizumab for First-Line Nonsquamous Non-Small Cell Lung Cancer. Oncologist. 2018 Jun;23(6):654-e58. doi: 10.1634/theoncologist.2017-0690. Epub 2018 Feb 7.
+3. nct_id: NCT00831545; pmid: 19767314; pmcid: PMC2826096; doi: 10.1093/annonc/mdp343; access_type: open_access; citation: Siena S, Crino L, Danova M, Del Prete S, Cascinu S, Salvagni S, Schiavetto I, Vitali M, Bajetta E. Dose-dense temozolomide regimen for the treatment of brain metastases from melanoma, breast cancer, or lung cancer not amenable to surgery or radiosurgery: a multicenter phase II study. Ann Oncol. 2010 Mar;21(3):655-661. doi: 10.1093/annonc/mdp343. Epub 2009 Sep 18.
+
+Reply with one JSON object only, no other text. Its keys are sheet names, each holding a list of rows; each row is an object keyed by column name. Every row must include the paper's nct_id, pmid and doi as listed (null if empty), even if a sheet has no column for them. Every paper must appear in at least one sheet (as data rows, an exclusion, or a failure). Use null for values not reported. Leave out sheets with no rows.
+Sheets and columns:
+- "included_arms": arm_id, nct_id, doi, arm_label, stratum, arm_description, moa, participants_trt_status, biomarker_selection, arm_sample_size, median_age, female_count, ECOG_0, ECOG_1, ECOG_0_1, ECOG_2, ECOG_3, ECOG_4, ECOG_Unknown, Tobacco_Never, Tobacco_Ever, Tobacco_Current, Tobacco_Former, Tobacco_Unknown, stage_I_II, stage_IIIA, stage_IIIB, stage_IIIB_wet, stage_IIIC, stage_IV, stage_recurrent, stage_Unknown, ajcc_edition, squamous_count, nonsquamous_count, histology_Unknown, location_PFS_KM, ORR, ORR_ci_low, ORR_ci_high, mPFS_months, mPFS_ci_low, mPFS_ci_high, notes
+- "excluded": nct_id, doi, exclusion_level, arm_label, stratum, exclusion_code, exclusion_evidence
+- "failed_papers": nct_id, doi, reason
+
+Codebook:
+"sheet","column","type","description"
+"included_arms","arm_id","integer count","Unique ID for one arm within one stratum: one more than the largest arm_id already in included_arms (1 if empty)"
+"included_arms","nct_id","text","ClinicalTrials.gov ID"
+"included_arms","doi","text","Publication DOI the data came from"
+"included_arms","arm_label","text","Short arm name; identical across strata of the same arm"
+"included_arms","stratum","text","Subgroup the row describes; 'all' when the arm is not stratified"
+"included_arms","arm_description","text","Drugs + dose + schedule"
+"included_arms","moa","text","Mechanism of action"
+"included_arms","participants_trt_status","text","Prior-treatment status / line of therapy"
+"included_arms","biomarker_selection","text","Biomarker the arm was selected on (e.g. unselected, EGFR mutation, ALK fusion, RET fusion, PD-L1 >=50%)"
+"included_arms","arm_sample_size","integer count","Patients in the arm/stratum"
+"included_arms","median_age","number","Median age (years)"
+"included_arms","female_count","integer count","Number of female patients"
+"included_arms","ECOG_0","integer count","Count with ECOG 0"
+"included_arms","ECOG_1","integer count","Count with ECOG 1"
+"included_arms","ECOG_0_1","integer count","ECOG 0 + 1. Always fill; use alone when the paper reports only '0-1'"
+"included_arms","ECOG_2","integer count","Count with ECOG 2"
+"included_arms","ECOG_3","integer count","Count with ECOG 3"
+"included_arms","ECOG_4","integer count","Count with ECOG 4 (ECOG 5 = dead, never enrolled)"
+"included_arms","ECOG_Unknown","integer count","ECOG not reported for these patients"
+"included_arms","Tobacco_Never","integer count","Never smokers"
+"included_arms","Tobacco_Ever","integer count","Ever smokers = current + former. Always fill"
+"included_arms","Tobacco_Current","integer count","Current smokers (only if reported separately)"
+"included_arms","Tobacco_Former","integer count","Former smokers (only if reported separately)"
+"included_arms","Tobacco_Unknown","integer count","Smoking status unknown"
+"included_arms","stage_I_II","integer count","Stage I-II (e.g. recurrent after surgery or early-stage trials)"
+"included_arms","stage_IIIA","integer count","Stage IIIA"
+"included_arms","stage_IIIB","integer count","Stage IIIB total (dry + wet)"
+"included_arms","stage_IIIB_wet","integer count","Subset of IIIB with malignant pleural effusion ('wet'); AJCC 6th ed. or earlier only"
+"included_arms","stage_IIIC","integer count","Stage IIIC (AJCC 8th ed.)"
+"included_arms","stage_IV","integer count","Stage IV"
+"included_arms","stage_recurrent","integer count","Recurrent disease if reported separately from stage"
+"included_arms","stage_Unknown","integer count","Stage not reported"
+"included_arms","ajcc_edition","integer (6, 7 or 8)","AJCC staging edition used (6, 7, 8)"
+"included_arms","squamous_count","integer count","Squamous histology count"
+"included_arms","nonsquamous_count","integer count","Non-squamous histology count"
+"included_arms","histology_Unknown","integer count","Histology not reported"
+"included_arms","location_PFS_KM","text","Figure with the PFS KM curve"
+"included_arms","ORR","proportion 0-1","Objective response rate (proportion 0-1)"
+"included_arms","ORR_ci_low","proportion 0-1","ORR 95% CI lower"
+"included_arms","ORR_ci_high","proportion 0-1","ORR 95% CI upper"
+"included_arms","mPFS_months","number","Median PFS in months (convert days / 30.4375, weeks / 4.348)"
+"included_arms","mPFS_ci_low","number","mPFS 95% CI lower"
+"included_arms","mPFS_ci_high","number","mPFS 95% CI upper"
+"included_arms","notes","text","Source table/figure for the values, population used, and anything unusual (see agent_instructions.md, notes section)"
+"excluded","nct_id","text","ClinicalTrials.gov ID, from the input DOI list (input_dois)"
+"excluded","doi","text","Publication DOI, from the input DOI list (input_dois)"
+"excluded","exclusion_level","text","paper = the whole paper is out of scope (one row, arm_label and stratum blank); arm = one stratum-arm of a paper whose other arms are kept"
+"excluded","arm_label","text","Short arm name, as it would appear in included_arms; blank for a paper-level row"
+"excluded","stratum","text","Subgroup the row describes ('all' when not stratified); blank for a paper-level row"
+"excluded","exclusion_code","text","Why the paper or arm is out of scope (full rules in exclusion_rules.md). Paper type (paper-level only): TRIAL_MISMATCH = paper reports a different trial than nct_id; PROTOCOL_ONLY = study protocol with no results; NO_ARM_LEVEL_RESULTS = no arm-level baseline, ORR or PFS (pooled, biomarker-only, modelling papers, etc.). Out of scope: NOT_NSCLC = patients not mostly NSCLC; SURGICAL = surgery is part of the planned treatment (neoadjuvant, perioperative, surgery alone); DEFINITIVE_CRT = curative-intent chest radiation given with chemotherapy; INTRACRANIAL_ORR = ORR counts brain lesions only; ON_TREATMENT_SUBGROUP = strata defined by an event during treatment (e.g. side effects); OVERLAP = patients already counted in another included arm"
+"excluded","exclusion_evidence","text","Short quote or paraphrase from the paper showing why, with its location (e.g. ""Methods: 'patients underwent surgery after 2 cycles of neoadjuvant therapy'""). For a wrong paper type, say what kind of paper it is and what is missing"
+"failed_papers","nct_id","text","ClinicalTrials.gov ID"
+"failed_papers","doi","text","Publication DOI"
+"failed_papers","reason","text","The agent couldn't get or read the paper: what it tried and what went wrong (no full text, page blocked, tables unreadable)"
+
+Rules:
+# Collection rules (NSCLC, default template)
+
+Collect stratum-arm-level data: one `included_arms` row per stratum-arm. The exclusion codes are defined in the exclusion rules below.
+
+## 1. Decide what to exclude
+
+Decide at the paper level first, then arm by arm.
+
+### 1a. Paper level
+
+Read the title, abstract and methods. Exclude the whole paper, without listing its arms, when either applies:
+
+- **Wrong paper type** (paper-type codes): `TRIAL_MISMATCH`, `PROTOCOL_ONLY`, `NO_ARM_LEVEL_RESULTS`
+- **Every arm out of scope:** every arm would be excluded under an out-of-scope code in 1b. Examples: a non-NSCLC study, a neoadjuvant trial, a chemoradiation trial.
+
+Write one row to the `excluded` sheet with `exclusion_level` = "paper". If several codes apply, use a paper-type code before an out-of-scope code, and the lowest-numbered code within each group; name the others in `exclusion_evidence`.
+
+A secondary analysis that reports arm-level baseline and outcomes (for example, a biomarker subset or long-term follow-up) is not excluded for its paper type. Fill it, and start `notes` with "SECONDARY ANALYSIS:".
+
+If only some arms are out of scope (for example, the non-NSCLC cohorts of a basket trial), go on to 1b.
+
+### 1b. Arm level
+
+List every arm or cohort the paper reports. If an arm is split into strata (for example, treatment-naive vs pretreated), use one row per stratum. Use only strata that don't overlap and that have both baseline characteristics (age, sex, ECOG, smoking, stage; usually Table 1) and outcomes (ORR, median PFS). Don't make rows for outcome-only subgroups, such as those in a forest plot. If you split an arm into strata, don't also add a row for the whole arm. If the arm isn't split, use `stratum` = "all".
+
+For each stratum-arm, check the out-of-scope codes: `NOT_NSCLC`, `SURGICAL`, `DEFINITIVE_CRT`, `INTRACRANIAL_ORR`, `ON_TREATMENT_SUBGROUP`.
+
+- **If at least one applies:** write one row to the `excluded` sheet with `exclusion_level` = "arm". If several apply, use the lowest-numbered one.
+- **If none applies:** fill its `included_arms` row (step 2).
+
+If unsure, include the arm and start `notes` with "CHECK:" and your question.
+
+**Overlap across papers:** if a paper is a subgroup, regional extension or follow-up of another trial, include the arm and start `notes` with "POSSIBLE OVERLAP: <parent trial>".
+
+For excluded rows, fill only the `excluded` columns defined in the codebook.
+
+## 2. Fill each included stratum-arm
+
+Fill every `included_arms` column in the codebook. Leave `arm_id` blank; the app numbers the rows.
+
+- Patient characteristics (sex, ECOG, smoking, stage, histology): enter counts. If only a percentage is given, count = round(% × `arm_sample_size`); say so in `notes`.
+- ECOG: `ECOG_0_1 + ECOG_2 + ECOG_3 + ECOG_4 + ECOG_Unknown = arm_sample_size`. Always fill `ECOG_0_1`; fill `ECOG_0` and `ECOG_1` only if reported separately. Zubrod is the same scale as ECOG. Enter Karnofsky-only as `ECOG_Unknown` and say so in `notes`.
+- Smoking: `Tobacco_Never + Tobacco_Ever + Tobacco_Unknown = arm_sample_size`; always fill these three. Fill `Tobacco_Current` and `Tobacco_Former` only if reported separately.
+- Stage: all stage columns except `stage_IIIB_wet` add up to `arm_sample_size`. If eligibility fixes the stage (for example, "stage IV only"), fill it from eligibility and say so in `notes`.
+- `ORR` and its CI limits are proportions from 0 to 1.
+- Brain-metastasis cohorts: enter the systemic RECIST ORR, not the intracranial ORR, and start `notes` with "SPECIAL POPULATION: brain metastases".
+- `mPFS_months`: days ÷ 30.4375, weeks ÷ 4.348. If median PFS is "not reached", leave it blank and say so in `notes`.
+- `female_count`: if only the male count is given, `arm_sample_size` − male count.
+- `median_age`: if only the mean is reported, enter it and write "MEAN age entered" in `notes`.
+
+Before replying, check that the ECOG, smoking and stage sums each equal `arm_sample_size`. If the paper's own numbers don't add up, put the gap in the Unknown column and write "CHECK: <which sum>" in `notes`.
+
+## 3. Write the notes
+
+Start with any flags (`SECONDARY ANALYSIS:`, `SPECIAL POPULATION:`, `POSSIBLE OVERLAP:`, `CHECK:`), then:
+
+1. **Sources:** the table or figure each group of values came from
+2. **Population used** when denominators differ, for example ITT (all enrolled patients) for baseline but measurable-disease patients for ORR
+3. **Anything unusual:** time to progression instead of PFS (in capitals), investigator vs central review, counts derived from percentages, mean age, unconfirmed responses
+
+Example: "SECONDARY ANALYSIS: 5-year follow-up of the phase III trial. Table 1 (ITT n=186), Table 2. ORR = 22/186 by central review (BICR), confirmed responses. Female = 186 − 120 male. Stage IV by eligibility. MEAN age entered."
+
+# Exclusion rules
+
+The analysis population is **systemic therapy for advanced or metastatic NSCLC**. Exclude a paper or arm when its ORR or PFS can't fairly be compared with that population.
+
+Use exactly one code. If more than one applies, use the lowest number:
+
+Paper type (always paper-level):
+
+1. `TRIAL_MISMATCH`: the paper reports a different trial than `nct_id`
+2. `PROTOCOL_ONLY`: study protocol with no results
+3. `NO_ARM_LEVEL_RESULTS`: no arm-level baseline, ORR or PFS
+
+Out of scope (paper- or arm-level):
+
+4. `NOT_NSCLC`: patients are not mostly NSCLC
+5. `SURGICAL`: surgery is part of the planned treatment
+6. `DEFINITIVE_CRT`: curative-intent chest radiation with chemotherapy
+7. `INTRACRANIAL_ORR`: ORR counts brain lesions only
+8. `ON_TREATMENT_SUBGROUP`: strata defined by an event during treatment
+9. `OVERLAP`: patients already counted in another included arm (in this app: flag only, see rule 9)
+
+A paper you couldn't get or read is not excluded; it goes to the `failed_papers` sheet.
+
+For each excluded paper or arm, write one row to the `excluded` sheet, filling its columns as the codebook defines them.
+
+Decide from the arm's planned treatment and population, not from words that appear in the paper.
+
+---
+
+## 1. TRIAL_MISMATCH
+
+**Exclude:** papers that name a different NCT number, or report a different study than the trial in `nct_id`. Give the number or study it names in `exclusion_evidence`.
+
+## 2. PROTOCOL_ONLY
+
+**Exclude:** study protocols and design papers that report no results.
+
+## 3. NO_ARM_LEVEL_RESULTS
+
+**Exclude:** papers with no arm-level baseline, ORR or PFS, such as pooled analyses across trials, biomarker-only, pharmacogenetic, modelling, cost-effectiveness, quality-of-life and methods papers.
+
+## 4. NOT_NSCLC
+
+**Exclude:**
+- Other-cancer cohorts of basket trials
+- Small-cell lung cancer
+- Brain metastases from primaries other than NSCLC
+- Arms where NSCLC patients are a small minority
+
+A trial registered as NSCLC can have a paper that reports only another cancer. Exclude it with this code; don't put it in `failed_papers`.
+
+## 5. SURGICAL
+
+**Exclude:** neoadjuvant, preoperative or perioperative therapy, and surgery alone.
+
+## 6. DEFINITIVE_CRT
+
+**Exclude:** curative-intent chest radiation given with chemotherapy, with or without another drug.
+
+## 7. INTRACRANIAL_ORR
+
+**Exclude:** arms whose only ORR is intracranial, for example RANO-BM or "CNS ORR".
+
+## 8. ON_TREATMENT_SUBGROUP
+
+**Exclude:** strata defined by something that happened after treatment started, such as side effects, early response, dose reductions or treatment duration.
+
+## 9. OVERLAP
+
+Papers are processed in separate batches, so you can't see which arms are already included. Don't exclude with this code. Instead, when a paper is any of the following, include its arms and start `notes` with "POSSIBLE OVERLAP: <parent trial name or NCT number>". A reviewer decides later.
+- Regional subgroup of a global trial
+- Regional extension study of a global trial
+- Later phase of another trial's arms, such as the maintenance phase of a trial whose first-line arms are reported elsewhere

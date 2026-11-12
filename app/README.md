@@ -65,7 +65,7 @@ The manifest records R 4.3.3. If Connect doesn't have that version, it uses the 
 
 ## Settings (environment variables)
 
-Set these in Posit Connect under **Vars**, or in `~/.Renviron` locally. Never put keys in the code.
+Set these in Posit Connect under **Settings → Advanced → Environment Variables**, or in `~/.Renviron` locally. Never put keys in the code.
 
 | Variable | Needed? | Meaning |
 |---|---|---|
@@ -99,7 +99,7 @@ python3.11 -m venv .venv
 
 Then put `AGENT_BACKEND=copilot`, `COPILOT_CONNECTION_STRING`, `COPILOT_TENANT_ID` and `COPILOT_CLIENT_ID` in `~/.Renviron`, restart R, and run the app. The first run opens a Microsoft sign-in page. Click **Test the agent on 10 papers** first and check the results against the papers before a full run.
 
-**On Posit Connect:** Connect builds the Python environment from `requirements.txt` (the version is recorded in `manifest.json`). Set `AGENT_BACKEND=copilot` and `COPILOT_CONNECTION_STRING` under **Vars**. Connect must have Python 3.10 or later.
+**On Posit Connect:** Connect builds the Python environment from `requirements.txt` (the version is recorded in `manifest.json`). Set `AGENT_BACKEND=copilot` and `COPILOT_CONNECTION_STRING` under **Settings → Advanced → Environment Variables**. Connect must have Python 3.10 or later.
 
 **Token lifetime:** the sign-in token is taken when the run starts and usually lasts about an hour. For long runs, split the paper list into batches.
 
