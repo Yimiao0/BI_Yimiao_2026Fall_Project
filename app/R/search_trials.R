@@ -162,6 +162,7 @@ classify_access <- function(papers, progress = function(...) NULL, chunk_size = 
   out <- rep(NA_character_, nrow(papers))
   pmcid_out <- rep(NA_character_, nrow(papers))
   doi_out <- rep(NA_character_, nrow(papers))
+  citation_out <- rep(NA_character_, nrow(papers))
   pmid <- trimws(as.character(papers$pmid))
   doi <- tolower(trimws(as.character(papers$doi)))
   pmcid <- toupper(trimws(as.character(papers$pmcid %||% rep(NA, nrow(papers)))))
@@ -210,14 +211,30 @@ classify_access <- function(papers, progress = function(...) NULL, chunk_size = 
       labels <- vapply(recs, label, character(1))
       pmcids <- vapply(recs, function(r) r$pmcid %||% NA_character_, character(1))
       rec_dois <- vapply(recs, function(r) r$doi %||% NA_character_, character(1))
+      citations <- vapply(recs, epmc_citation, character(1))
       found <- match(job$ids, keys)
       out[job$idx] <- ifelse(is.na(found), "not_in_europepmc", labels[found])
       pmcid_out[job$idx] <- pmcids[found]
       doi_out[job$idx] <- rec_dois[found]
+      citation_out[job$idx] <- citations[found]
     }
     progress(j / length(jobs), sprintf("Europe PMC lookup: request %d of %d", j, length(jobs)))
   }
-  data.frame(access_type = out, pmcid = pmcid_out, doi = doi_out)
+  data.frame(access_type = out, pmcid = pmcid_out, doi = doi_out, citation = citation_out)
+}
+
+#' A citation with the title first, from a Europe PMC record:
+#' "Title. Authors. Journal. Year;Volume:Pages." NA if the record has no title.
+epmc_citation <- function(rec) {
+  title <- trimws(rec$title %||% "")
+  if (!nzchar(title)) return(NA_character_)
+  end_dot <- function(x) if (grepl("[.?!]$", x)) x else paste0(x, ".")
+  source <- paste0(rec$pubYear %||% "",
+                   if (!is.null(rec$journalVolume)) paste0(";", rec$journalVolume) else "",
+                   if (!is.null(rec$pageInfo)) paste0(":", rec$pageInfo) else "")
+  parts <- c(title, rec$authorString %||% "", rec$journalTitle %||% "", source)
+  parts <- trimws(parts[nzchar(trimws(parts))])
+  paste(vapply(parts, end_dot, character(1)), collapse = " ")
 }
 
 #' Full Step 1 run. Returns a list with:
@@ -260,6 +277,8 @@ search_trials <- function(condition, statuses, phases, intervention_types, purpo
     papers$access_type <- epmc$access_type
     papers$pmcid <- epmc$pmcid
     papers$doi <- ifelse(is.na(papers$doi), epmc$doi, papers$doi)
+    # Title-first citation from Europe PMC; ClinicalTrials.gov's text if not found
+    papers$citation <- ifelse(is.na(epmc$citation), papers$citation, epmc$citation)
   }
   papers <- papers[, PAPER_COLUMNS]
 
