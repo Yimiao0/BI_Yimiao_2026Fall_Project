@@ -126,6 +126,7 @@ collect_tab <- nav_panel(
       input_task_button("test_agent", "Test the agent on 10 papers", icon = icon("vial"),
                         class = "btn-outline-primary mb-2"),
       input_task_button("collect", "Run the agent", icon = icon("robot")),
+      uiOutput("stop_ui"),
       uiOutput("backend_note")
     ),
     fillable = FALSE,
@@ -164,7 +165,8 @@ The Excel download has four sheets:
 Review the paper list before step 2. You can delete rows and upload the edited file there.
 
 **2. Collect data.** Only open-access papers are sent to the agent, whichever paper list
-you use; the others are skipped and counted in the progress log. The agent reads each paper and fills the template, one sheet per
+you use; the others are skipped and counted in the progress log. *Stop* ends a run after the
+batch of 10 papers in progress; the papers done so far are kept and can be downloaded. The agent reads each paper and fills the template, one sheet per
 template sheet (for the default template: `included_arms`, `excluded`, `failed_papers`).
 The agent also gets the collection and exclusion rules with every batch. The default
 rules are for NSCLC; for another disease or template, download them, adapt them and upload
@@ -306,7 +308,9 @@ server <- function(input, output, session) {
   output$paper_table <- DT::renderDT({
     d <- kept_papers()
     d$doi <- ifelse(is.na(d$doi), "", sprintf('<a href="https://doi.org/%s" target="_blank">%s</a>', d$doi, d$doi))
-    DT::datatable(d, escape = setdiff(names(d), "doi"), rownames = FALSE,
+    # PubMed Central page: the full text the agent reads
+    d$pmcid <- ifelse(is.na(d$pmcid), "", sprintf('<a href="https://pmc.ncbi.nlm.nih.gov/articles/%s/" target="_blank">%s</a>', d$pmcid, d$pmcid))
+    DT::datatable(d, escape = setdiff(names(d), c("doi", "pmcid")), rownames = FALSE,
                   options = list(pageLength = 10, scrollX = TRUE,
                                  columnDefs = list(list(targets = which(names(d) == "citation") - 1, render = DT::JS(
                                    "function(d,t){return t==='display'&&d&&d.length>80?d.substr(0,80)+'…':d;}")))))
@@ -353,11 +357,12 @@ server <- function(input, output, session) {
   collect_template_path <- reactiveVal(NULL)
 
   collect_task <- ExtendedTask$new(function(args, progress_path) {
+    stop_file <- stop_file_for(progress_path)
     future_promise({
       load_app_functions(args$app_dir)
       run_agent(args$papers, args$template_path, args$codebook_path, args$instructions,
                 progress = progress_writer(progress_path), token = args$token,
-                max_papers = args$max_papers)
+                max_papers = args$max_papers, stop_file = stop_file)
     }, seed = TRUE)
   }) |> bind_task_button("collect") |> bind_task_button("test_agent")
 
@@ -417,6 +422,30 @@ server <- function(input, output, session) {
   observeEvent(input$test_agent, start_collect(10))
 
   watch_progress("collect", collect_progress_path, collect_task)
+
+  # Stop: the background run checks for this file before each batch of papers
+  stop_file_for <- function(progress_path) paste0(progress_path, ".stop")
+  request_stop <- function(path) {
+    if (!is.null(path) && !file.exists(stop_file_for(path))) file.create(stop_file_for(path))
+  }
+  output$stop_ui <- renderUI({
+    if (collect_task$status() != "running") return(NULL)
+    actionButton("stop_agent", "Stop", icon = icon("stop"), class = "btn-outline-danger w-100 mt-2")
+  })
+  observeEvent(input$stop_agent, {
+    path <- collect_progress_path()
+    if (is.null(path) || file.exists(stop_file_for(path))) return()
+    request_stop(path)
+    # Name the batch in progress, from the run's last "Sending papers a-b of n" line
+    p <- read_progress(path)
+    sending <- regmatches(p$log, regexpr("papers [0-9]+-[0-9]+(?= of)", p$log, perl = TRUE))
+    msg <- if (length(sending) > 0) {
+      sprintf("Stopping after the current batch (%s)...", sending[length(sending)])
+    } else "Stopping before the first batch is sent..."
+    progress_writer(path)(p$fraction, msg)
+  })
+  # Closing or reloading the page stops the run too: nobody would see its results
+  session$onSessionEnded(function() request_stop(isolate(collect_progress_path())))
 
   collect_result <- reactive({
     req(collect_task$status() == "success")

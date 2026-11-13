@@ -226,7 +226,19 @@ classify_access <- function(papers, progress = function(...) NULL, chunk_size = 
 #' A citation with the title first, from a Europe PMC record:
 #' "Title. Authors. Journal. Year;Volume:Pages." NA if the record has no title.
 epmc_citation <- function(rec) {
-  title <- trimws(rec$title %||% "")
+  # Titles can hold HTML markup, e.g. "<i>nab</i>-Paclitaxel"; keep the text only
+  plain <- function(x) {
+    x <- x %||% ""
+    for (i in 1:2) {  # markup can be encoded twice, e.g. "&amp;lt;i&amp;gt;"
+      x <- gsub("&lt;", "<", gsub("&gt;", ">", gsub("&quot;", "\"", gsub("&#39;|&apos;", "'", x))))
+      x <- gsub("&amp;", "&", x)
+    }
+    x <- gsub("</?[A-Za-z][A-Za-z0-9]*( [^<>]*)?/?>", "", x)  # tags only, so "R0 < 1" stays
+    trimws(gsub("\\s+", " ", x))
+  }
+  rec$title <- plain(rec$title); rec$authorString <- plain(rec$authorString)
+  rec$journalTitle <- plain(rec$journalTitle)
+  title <- rec$title
   if (!nzchar(title)) return(NA_character_)
   end_dot <- function(x) if (grepl("[.?!]$", x)) x else paste0(x, ".")
   source <- paste0(rec$pubYear %||% "",

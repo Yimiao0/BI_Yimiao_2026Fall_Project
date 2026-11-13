@@ -312,10 +312,11 @@ open_access_only <- function(papers, progress = function(...) NULL) {
 
 #' Process every paper, `batch_size` papers per message to the agent. A paper
 #' that can't be processed is logged in failed_papers (when the template has
-#' that sheet) and the run continues.
+#' that sheet) and the run continues. If `stop_file` appears, the run stops
+#' before the next batch and returns what's done so far.
 run_agent <- function(papers, template_path, codebook_path = NULL, instructions = "",
                       progress = function(...) NULL, token = NULL, max_papers = Inf,
-                      batch_size = 10) {
+                      batch_size = 10, stop_file = NULL) {
   columns <- read_template(template_path)
   codebook <- read_codebook(codebook_path, template_path)
   papers <- open_access_only(papers[, PAPER_COLUMNS], progress)
@@ -338,6 +339,13 @@ run_agent <- function(papers, template_path, codebook_path = NULL, instructions 
   outs <- vector("list", length(batches))
   for (b in seq_along(batches)) {
     idx <- batches[[b]]
+    # The Stop button (or closing the page) writes stop_file; stop between batches
+    if (!is.null(stop_file) && file.exists(stop_file)) {
+      done <- idx[1] - 1
+      report(NA, sprintf("Stopped by user: %d of %d papers done; %d not sent to data collection AI agent", done, n, n - done))
+      break
+    }
+    report(NA, sprintf("Sending papers %d-%d of %d to the agent", idx[1], max(idx), n))
     outs[[b]] <- process_batch_safely(papers[idx, , drop = FALSE], columns, codebook, instructions,
                                       idx[1], token, report)
     report(max(idx) / n, sprintf("Papers %d-%d of %d done", idx[1], max(idx), n))

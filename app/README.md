@@ -21,7 +21,7 @@ The agent is currently a **placeholder** (test mode) that returns made-up rows, 
 
 ![Step 1 results for completed phase 2/3 NSCLC trials](screenshots/step1_results.png)
 
-**Step 2, collecting data.** Choose the paper list (from step 1 or an uploaded file with a `pmid`, `doi` or `pmcid` column), the output template, the codebook and the rules (the default NSCLC rules, or your own .txt/.md file; **Download the default rules** shows what the agent gets), then click **Test the agent on 10 papers** to check the agent on the first 10 papers, or **Run the agent** for all of them. Only open-access papers (each has a PubMed Central ID) are sent to the agent; papers in an uploaded list with no `access_type` are checked in Europe PMC first. The orange box means the app is in test mode with the placeholder agent.
+**Step 2, collecting data.** Choose the paper list (from step 1 or an uploaded file with a `pmid`, `doi` or `pmcid` column), the output template, the codebook and the rules (the default NSCLC rules, or your own .txt/.md file; **Download the default rules** shows what the agent gets), then click **Test the agent on 10 papers** to check the agent on the first 10 papers, or **Run the agent** for all of them. **Stop** (shown during a run) ends the run after the batch of 10 papers in progress and keeps the results so far; closing or reloading the page does the same. Only open-access papers (each has a PubMed Central ID) are sent to the agent; papers in an uploaded list with no `access_type` are checked in Europe PMC first. The orange box means the app is in test mode with the placeholder agent.
 
 ![Step 2 before running the agent](screenshots/step2_beginningUI.png)
 
