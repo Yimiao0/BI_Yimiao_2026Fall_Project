@@ -71,3 +71,6 @@ presentation.md
 app/.venv/
 app/.token_cache.json
 __pycache__/
+
+# Chengxue code -- local copy only
+/Chengxue_code/
